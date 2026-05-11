@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Box Manager</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
+  <link rel="dns-prefetch" href="//raw.githubusercontent.com">
+  <link rel="icon" type="image/png" href="assets/ui/rainbow_box_icon.png"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div id="top-bar">
+  <div class="toolbar">
+    <!-- Centre : recherche -->
+    <div class="toolbar-search">
+      <input id="search-input" type="text" placeholder="Search a character..." />
+      <button id="clear-search" class="btn" aria-label="Clear search">&times;</button>
+    </div>
+
+    <!-- Droite : actions -->
+    <div class="actions">
+      <!-- Sort -->
+      <div class="sort-wrapper">
+        <button id="sort-toggle" class="filter-btn" aria-haspopup="true" aria-expanded="false" aria-controls="sort-menu" title="Sort">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div id="sort-menu" class="sort-menu" hidden>
+          <button class="sort-item" data-sort="id">
+            <span class="sort-label">ID</span><span class="sort-arrow" aria-hidden="true"></span>
+          </button>
+          <button class="sort-item" data-sort="name">
+            <span class="sort-label">Name</span><span class="sort-arrow" aria-hidden="true"></span>
+          </button>
+          <button class="sort-item" data-sort="type">
+            <span class="sort-label">Type</span><span class="sort-arrow" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <button
+        id="tab-archive"
+        class="filter-btn catalog-archive-btn"
+        type="button"
+        aria-selected="false"
+        data-page="archive"
+        title="Character Log"
+        aria-label="Character Log"
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="4" y="5" width="13" height="15" rx="2.5" stroke="currentColor" stroke-width="2"/>
+          <path d="M7.5 9h6M7.5 12h6M7.5 15h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 8.5h2.5a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Barre de progression -->
+  <div id="progress-area">
+    <div id="progress-track">
+      <div id="progress-fill"></div>
+      <span id="progress-label"></span>
+    </div>
+  </div>
+
+  <!-- Hooks cachés pour import/export -->
+  <div id="io-hooks">
+    <button id="export-btn" type="button">Export</button>
+    <input id="import-input" type="file" accept=".json"/>
+  </div>
+</div>
+
+
+  <main>
+    <div id="catalog-tabs" class="catalog-tabs" role="tablist" aria-label="Character pages">
+      <button id="tab-sugo" class="catalog-tab is-active" type="button" role="tab" aria-selected="true" data-page="sugo">Sugo</button>
+      <button id="tab-rr" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="rr">Rare Recruit</button>
+      <button id="tab-f2p" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="f2p">F2P</button>
+      <div id="catalog-ownership-toggle" class="catalog-ownership" role="group" aria-label="Ownership display">
+        <button id="catalog-view-all" class="catalog-ownership-btn is-on" type="button" data-mode="all" aria-pressed="true">All</button>
+        <button id="catalog-view-owned" class="catalog-ownership-btn" type="button" data-mode="owned" aria-pressed="false">Owned</button>
+        <button id="catalog-view-missing" class="catalog-ownership-btn" type="button" data-mode="missing" aria-pressed="false">Missing</button>
+      </div>
+    </div>
+    <section id="character-list"></section>
+  </main>
+
+  <!-- =========================
+       Panneau de paramètres (overlay)
+       ========================= -->
+  <div id="settings-panel" class="fp-overlay" hidden>
+    <div class="fp-dialog" role="dialog" aria-modal="true" aria-labelledby="sp-title">
+      <div class="fp-header">
+        <h3 id="sp-title">Settings</h3>
+        <button class="fp-close" id="sp-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="fp-content">
+        <!-- Export/Import -->
+        <section class="fp-section">
+          <h4>Backup</h4>
+          <div class="fp-chips">
+            <button id="settings-export" class="fp-chip">
+              <span>Export JSON</span>
+            </button>
+            <button id="settings-import" class="fp-chip">
+              <span>Import JSON...</span>
+            </button>
+            <button id="settings-reset" class="fp-chip fp-chip-danger">
+              <span>Reset</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Theme -->
+        <section class="fp-section">
+          <h4>Theme</h4>
+          <div class="fp-chips">
+            <button id="theme-toggle" class="fp-chip">
+              <span id="theme-label">Dark mode</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Statistics -->
+        <section class="fp-section">
+          <h4>Statistics</h4>
+          <div class="stats-info">
+            <p id="stats-characters">Total characters: 0</p>
+            <p id="stats-owned">Owned characters: 0</p>
+            <p id="stats-completion">Completion rate: 0%</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="fp-footer">
+        <div class="fp-spacer"></div>
+        <button id="sp-close-btn" class="fp-btn fp-btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-reset-dialog" class="confirm-overlay" hidden>
+    <div class="confirm-dialog settings-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-reset-title">
+      <div class="confirm-title" id="settings-reset-title">Reset Data</div>
+      <div class="confirm-text">Choisis les données à remettre à zéro.</div>
+
+      <div class="settings-reset-scopes" role="group" aria-label="Reset scopes">
+        <label class="settings-reset-option">
+          <input id="settings-reset-units" type="checkbox" />
+          <span>Perso</span>
+        </label>
+        <label class="settings-reset-option">
+          <input id="settings-reset-island" type="checkbox" />
+          <span>Gather Island</span>
+        </label>
+        <label class="settings-reset-option is-all">
+          <input id="settings-reset-all" type="checkbox" />
+          <span>Totalité</span>
+        </label>
+      </div>
+
+      <div class="confirm-actions">
+        <button id="settings-reset-cancel" class="confirm-btn">Cancel</button>
+        <button id="settings-reset-apply" class="confirm-btn is-danger" disabled>Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="edit-panel" class="fp-overlay" hidden>
+    <div class="fp-dialog edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <div class="fp-header">
+        <h3 id="edit-title">Edit Units</h3>
+        <button class="fp-close" id="edit-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="edit-content">
+        <div class="edit-mode-banner" id="edit-mode-banner" role="status" aria-live="polite">
+          <span id="edit-mode-status">Mode Edit inactif</span>
+        </div>
+        <div id="edit-level-block" class="edit-block">
+          <div class="edit-value-row edit-level-row">
+            <span class="edit-level-label">Level</span>
+            <label class="edit-field-toggle">
+              <input id="edit-enable-level" type="checkbox" />
+              <span>Apply</span>
+            </label>
+            <div class="edit-level-steps" aria-label="Level quick set">
+              <button type="button" class="edit-level-step is-max" data-level="99" title="Set level to 99">MAX</button>
+              <button type="button" class="edit-level-step is-threshold" data-level="105" title="Set level to 105">105</button>
+              <button type="button" class="edit-level-step is-threshold" data-level="110" title="Set level to 110">110</button>
+              <button type="button" class="edit-level-step is-threshold" data-level="120" title="Set level to 120">120</button>
+              <button type="button" class="edit-level-step is-threshold" data-level="130" title="Set level to 130">130</button>
+              <button type="button" class="edit-level-step is-max" data-level="150" title="Set level to 150">MAX</button>
+            </div>
+            <span id="edit-level-value">99/150</span>
+          </div>
+          <input id="edit-level-slider" type="range" min="99" max="150" step="1" value="99" />
+        </div>
+        <div id="edit-cc-block" class="edit-block">
+          <div class="edit-value-row edit-cc-row">
+            <span class="edit-cc-label">Cotton Candy</span>
+            <label class="edit-field-toggle">
+              <input id="edit-enable-cc" type="checkbox" />
+              <span>Apply</span>
+            </label>
+            <div class="edit-cc-steps" aria-label="Cotton Candy increments">
+              <button type="button" class="edit-cc-step" data-step="-1" title="Remove 1">-1</button>
+              <button type="button" class="edit-cc-step" data-step="-10" title="Remove 10">-10</button>
+              <button type="button" class="edit-cc-step" data-step="-100" title="Remove 100">-100</button>
+              <button type="button" class="edit-cc-step" data-step="1" title="Add 1">+1</button>
+              <button type="button" class="edit-cc-step" data-step="10" title="Add 10">+10</button>
+              <button type="button" class="edit-cc-step" data-step="100" title="Add 100">+100</button>
+            </div>
+            <span id="edit-cc-value">0/600</span>
+          </div>
+          <input id="edit-cc-slider" type="range" min="0" max="600" step="1" value="0" />
+        </div>
+        <div class="edit-dual-row">
+          <div id="edit-lb-block" class="edit-dual-col edit-block">
+            <div class="edit-value-row">
+              <span>Limit Break</span>
+              <label class="edit-field-toggle">
+                <input id="edit-enable-lb" type="checkbox" />
+                <span>Apply</span>
+              </label>
+            </div>
+            <div id="edit-lb-options" class="edit-lb-options" role="radiogroup" aria-label="Limit Break choice">
+              <button type="button" class="edit-lb-option" data-lb="1" aria-pressed="false" title="Limit Break option 1">
+                <img src="assets/modal/limitbreak_max.png" alt="Limit Break Max" class="edit-lb-icon" />
+              </button>
+              <button type="button" class="edit-lb-option" data-lb="2" aria-pressed="false" title="Limit Break option 2">
+                <img src="assets/modal/limitbreak_super_max.png" alt="Limit Break Super Max" class="edit-lb-icon" />
+              </button>
+            </div>
+          </div>
+          <div id="edit-rb-block" class="edit-dual-col edit-block">
+            <div class="edit-value-row">
+              <span>Rainbow</span>
+              <label class="edit-field-toggle">
+                <input id="edit-enable-rb" type="checkbox" />
+                <span>Apply</span>
+              </label>
+            </div>
+            <div id="edit-rb-options" class="edit-rb-options" role="radiogroup" aria-label="Rainbow choice">
+              <button type="button" class="edit-rb-option" data-rb="1" aria-pressed="false" title="Rainbow">
+                <span class="edit-rb-preview edit-rb-preview-1" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="edit-rb-option" data-rb="2" aria-pressed="false" title="Super Rainbow">
+                <span class="edit-rb-preview edit-rb-preview-2" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p id="edit-action-summary" class="edit-summary">Aucune modification sélectionnée.</p>
+        <p class="edit-help">Active le mode Edit puis clique un perso possédé pour appliquer.</p>
+      </div>
+
+      <div class="fp-footer">
+        <button id="edit-clear" class="fp-btn fp-btn-ghost" type="button">Effacer</button>
+        <button id="edit-deactivate" class="fp-btn fp-btn-ghost" type="button">Désactiver</button>
+        <div class="fp-spacer"></div>
+        <button id="edit-apply" class="fp-btn fp-btn-primary" type="button">Activer mode Edit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       Gather Island Window
+       ========================= -->
+  <div id="island-panel" class="fp-overlay" hidden>
+    <div class="fp-dialog island-dialog" role="dialog" aria-modal="true" aria-labelledby="island-title">
+      <div class="fp-header">
+        <div class="island-title-row">
+          <h3 id="island-title">Gather Island</h3>
+          <button id="island-info" class="island-info-btn" aria-label="Information" aria-expanded="false" aria-controls="island-max-panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 20H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <rect x="7" y="13" width="3" height="5" rx="1" fill="currentColor"/>
+              <rect x="12" y="10" width="3" height="8" rx="1" fill="currentColor"/>
+              <rect x="17" y="7" width="3" height="11" rx="1" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="island-calc" class="island-info-btn" aria-label="Ticket Calculator" aria-expanded="false" aria-controls="island-calc-panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="3" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+              <rect x="8" y="6" width="8" height="3" rx="1" fill="currentColor"/>
+              <circle cx="9" cy="12.5" r="1.1" fill="currentColor"/>
+              <circle cx="12" cy="12.5" r="1.1" fill="currentColor"/>
+              <circle cx="15" cy="12.5" r="1.1" fill="currentColor"/>
+              <circle cx="9" cy="16.5" r="1.1" fill="currentColor"/>
+              <circle cx="12" cy="16.5" r="1.1" fill="currentColor"/>
+              <circle cx="15" cy="16.5" r="1.1" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <button class="fp-close" id="island-close" aria-label="Close">×</button>
+      </div>
+
+      <div id="island-max-panel" class="island-max-panel" role="dialog" aria-label="Max Upgrade" hidden>
+        <div class="island-max-title">Max Upgrade</div>
+        <div id="island-max-list" class="island-max-list"></div>
+      </div>
+
+      <div id="island-calc-panel" class="island-calc-panel" role="dialog" aria-label="Ticket Calculator" hidden>
+        <div class="island-calc-title">Ticket Calculator</div>
+        <div id="island-calc-list" class="island-calc-list"></div>
+        <div class="island-calc-footer">
+          <span>Total</span>
+          <span class="island-calc-total-wrap">
+            <span id="island-calc-total">0</span>
+            <img src="assets/island/pvp ticket.png" alt="PVP Ticket" class="island-calc-total-icon" />
+          </span>
+        </div>
+      </div>
+
+      <div class="island-content">
+        <div id="island-grid" class="island-grid"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="bottom-bar">
+    <div class="toolbar bottom-toolbar">
+      <div class="bottom-slot bottom-left"></div>
+      <div class="bottom-slot bottom-center">
+        <div class="bottom-actions">
+          <button id="selection-toggle" class="filter-btn" title="Edit" aria-pressed="false" aria-label="Edit characters">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" fill="currentColor"/>
+              <path d="M20.71 7.04a1 1 0 000-1.41L18.37 3.29a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="collector-island-toggle" class="filter-btn" title="Gather Island" aria-label="Gather Island">
+            <svg viewBox="0 0 192 192" fill="currentColor" aria-hidden="true">
+              <path d="M107.9 86.5c-17.1 0-31.1 13.6-31.1 30.2 0 16.7 13.9 30.2 31.1 30.2 17.1 0 31.1-13.6 31.1-30.2s-13.9-30.2-31.1-30.2z"></path>
+              <path d="M142.9 123c3.1 1.6 6.6 2.5 10.1 2.5 12.1 0 22-10 22-22.2C175 91 165.1 81 153 81c-8.1 0-15.4 4.4-19.3 11.5 6.4 6.1 10 14.6 10 23.3.1 2.4-.2 4.8-.8 7.2zM106.3 151.8c4 5.5 11.2 10.4 19.3 13.2 8 2.7 15.2 2.7 19 .1 7.3-5.1 9.7-22.7 2.4-35.4-1.1-.3-2.4-.9-3.6-1.4 2.5 4.3 3.8 9.8 3.5 15.3-.3 6-2.5 11-5.9 13.4-6 4.3-18.7.7-26.3-5.5-2.8.4-5.5.5-8.4.3zM84.7 73.9c-5.1 0-9.3 4.2-9.3 9.4 0 4.4 3.1 8.2 7.3 9.1 3.3-3.3 7.1-6 11.3-8.1 0-.3.1-.7.1-1-.1-5.1-4.3-9.4-9.4-9.4z"></path>
+              <path d="M86.5 34C52 34 23.9 62.4 23.9 97.2c0 34.1 26.8 62 60.2 63.2-22.6-8.7-38-30.7-38-56.1 0-33.1 26.6-60.1 59.4-60.1 6.9 0 13.7 1.2 20 3.5-11-8.8-24.7-13.7-39-13.7zM140.3 63.6c-.5 0-1 .1-1.4.2-1.7.5-3.1 1.8-4 3.7-.9 2-1 4.4-.4 6.8.9 3.3 3.2 5.9 5.8 6.7 2.2-1.4 4.6-2.5 7-3.3 1-2.1 1.2-4.6.5-7.1-.6-2.4-2-4.4-3.8-5.7-1.1-.8-2.4-1.3-3.7-1.3z"></path>
+            </svg>
+          </button>
+          <button id="settings-toggle" class="filter-btn" aria-haspopup="true" aria-expanded="false" aria-controls="settings-panel" title="Settings">
+            <svg width="800px" height="800px" viewBox="0 0 1024 1024" class="icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path fill="currentColor" d="M600.704 64a32 32 0 0130.464 22.208l35.2 109.376c14.784 7.232 28.928 15.36 42.432 24.512l112.384-24.192a32 32 0 0134.432 15.36L944.32 364.8a32 32 0 01-4.032 37.504l-77.12 85.12a357.12 357.12 0 010 49.024l77.12 85.248a32 32 0 014.032 37.504l-88.704 153.6a32 32 0 01-34.432 15.296L708.8 803.904c-13.44 9.088-27.648 17.28-42.368 24.512l-35.264 109.376A32 32 0 01600.704 960H423.296a32 32 0 01-30.464-22.208L357.696 828.48a351.616 351.616 0 01-42.56-24.64l-112.32 24.256a32 32 0 01-34.432-15.36L79.68 659.2a32 32 0 014.032-37.504l77.12-85.248a357.12 357.12 0 010-48.896l-77.12-85.248A32 32 0 0179.68 364.8l88.704-153.6a32 32 0 0134.432-15.296l112.32 24.256c13.568-9.152 27.776-17.408 42.56-24.64l35.2-109.312A32 32 0 01423.232 64H600.64zm-23.424 64H446.72l-36.352 113.088-24.512 11.968a294.113 294.113 0 00-34.816 20.096l-22.656 15.36-116.224-25.088-65.28 113.152 79.68 88.192-1.92 27.136a293.12 293.12 0 000 40.192l1.92 27.136-79.808 88.192 65.344 113.152 116.224-25.024 22.656 15.296a294.113 294.113 0 0034.816 20.096l24.512 11.968L446.72 896h130.688l36.48-113.152 24.448-11.904a288.282 288.282 0 0034.752-20.096l22.592-15.296 116.288 25.024 65.28-113.152-79.744-88.192 1.92-27.136a293.12 293.12 0 000-40.256l-1.92-27.136 79.808-88.128-65.344-113.152-116.288 24.96-22.592-15.232a287.616 287.616 0 00-34.752-20.096l-24.448-11.904L577.344 128zM512 320a192 192 0 110 384 192 192 0 010-384zm0 64a128 128 0 100 256 128 128 0 000-256z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="bottom-slot bottom-right"></div>
+    </div>
+  </div>
+
+  <script src="main_base.js"></script>
+</body>
+</html>
+
+
+
