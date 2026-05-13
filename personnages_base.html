@@ -9,6 +9,7 @@
   <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
   <link rel="dns-prefetch" href="//raw.githubusercontent.com">
   <link rel="icon" type="image/png" href="assets/ui/rainbow_box_icon.png"/>
+  <link rel="preload" href="assets/fonts/DFG-RomanYuki-W9.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -38,6 +39,29 @@
           </button>
           <button class="sort-item" data-sort="type">
             <span class="sort-label">Type</span><span class="sort-arrow" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <!-- Type filter -->
+      <div class="type-filter-wrapper">
+        <button id="type-filter-toggle" class="filter-btn" aria-haspopup="true" aria-expanded="false" aria-controls="type-filter-menu" title="Filter by type">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span id="type-filter-badge" class="type-filter-badge" hidden>0</span>
+        </button>
+        <div id="type-filter-menu" class="sort-menu type-filter-menu" hidden>
+          <div class="type-filter-grid">
+            <button class="type-filter-item" type="button" data-type="str" aria-pressed="false" title="STR"><img src="assets/affinity/type-str.png" alt="STR"/></button>
+            <button class="type-filter-item" type="button" data-type="dex" aria-pressed="false" title="DEX"><img src="assets/affinity/type-dex.png" alt="DEX"/></button>
+            <button class="type-filter-item" type="button" data-type="qck" aria-pressed="false" title="QCK"><img src="assets/affinity/type-qck.png" alt="QCK"/></button>
+            <button class="type-filter-item" type="button" data-type="psy" aria-pressed="false" title="PSY"><img src="assets/affinity/type-psy.png" alt="PSY"/></button>
+            <button class="type-filter-item" type="button" data-type="int" aria-pressed="false" title="INT"><img src="assets/affinity/type-int.png" alt="INT"/></button>
+            <button class="type-filter-item" type="button" data-type="dual" aria-pressed="false" title="DUAL"><img src="assets/affinity/type-dual.png" alt="DUAL"/></button>
+            <button class="type-filter-item" type="button" data-type="vs" aria-pressed="false" title="VS"><img src="assets/affinity/type-vs.png" alt="VS"/></button>
+          </div>
+          <button id="type-filter-clear" class="sort-item type-filter-clear" type="button">
+            <span class="sort-label">Clear all</span>
           </button>
         </div>
       </div>
@@ -78,10 +102,21 @@
 
   <main>
     <div id="catalog-tabs" class="catalog-tabs" role="tablist" aria-label="Character pages">
-      <button id="tab-sugo" class="catalog-tab is-active" type="button" role="tab" aria-selected="true" data-page="sugo">Sugo</button>
-      <button id="tab-rr" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="rr">Rare Recruit</button>
-      <button id="tab-f2p" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="f2p">F2P</button>
-      <div id="catalog-ownership-toggle" class="catalog-ownership" role="group" aria-label="Ownership display">
+    <div class="catalog-page-group" role="group" aria-label="Catalog page">
+      <button id="tab-sugo" class="catalog-tab is-active" type="button" role="tab" aria-selected="true" data-page="sugo">
+        <img class="catalog-tab-icon catalog-tab-icon-img" src="assets/ui/sugo_tab_icon.png" alt="" aria-hidden="true" />
+        <span>Sugo</span>
+      </button>
+      <button id="tab-rr" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="rr">
+        <img class="catalog-tab-icon catalog-tab-icon-img" src="assets/ui/rr_tab_icon.png" alt="" aria-hidden="true" />
+        <span>Rare Recruit</span>
+      </button>
+      <button id="tab-f2p" class="catalog-tab" type="button" role="tab" aria-selected="false" data-page="f2p">
+        <img class="catalog-tab-icon catalog-tab-icon-img" src="assets/ui/f2p_tab_icon.png" alt="" aria-hidden="true" />
+        <span>F2P</span>
+      </button>
+    </div>
+    <div id="catalog-ownership-toggle" class="catalog-ownership" role="group" aria-label="Ownership display">
         <button id="catalog-view-all" class="catalog-ownership-btn is-on" type="button" data-mode="all" aria-pressed="true">All</button>
         <button id="catalog-view-owned" class="catalog-ownership-btn" type="button" data-mode="owned" aria-pressed="false">Owned</button>
         <button id="catalog-view-missing" class="catalog-ownership-btn" type="button" data-mode="missing" aria-pressed="false">Missing</button>
@@ -355,6 +390,12 @@
       <div class="bottom-slot bottom-right"></div>
     </div>
   </div>
+
+  <button id="scroll-top-btn" type="button" aria-label="Back to top" title="Back to top">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
 
   <script src="main_base.js"></script>
 </body>

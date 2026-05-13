@@ -13,6 +13,8 @@
   const THUMB_PRIMARY = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/glo";
   const THUMB_FALLBACK = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/jap";
   const ART_BASE = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/full/transparent";
+  const ART_BASE_NOREF = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io/api/images/full/transparent";
+  const ART_BASE_RAW = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/full/transparent";
   const EXCLUDED_IDS = new Set(["591","592","593","594","595","578","963","964","965"]);
   const THUMB_JAP_PRIMARY_IDS = new Set(["4170","2909","2830","2784","4167"]);
   const THUMB_ID_OVERRIDES = new Map([["231", "232"], ["232", "231"]]);
@@ -32,6 +34,7 @@
   const artworkWarmInFlight = new Set();
   const artworkWarmQueue = [];
   const MAX_ARTWORK_WARM_CONCURRENCY = 2;
+  const ENABLE_IDLE_ARTWORK_WARMUP = false;
   const SORT_KEY = "boxSort";
   const CATALOG_REPEAT_KEY = "catalogRepeatSelected";
   const CATALOG_OWNERSHIP_MODES = new Set(["all", "owned", "missing"]);
@@ -82,6 +85,31 @@
     psy: 5,
     int: 6
   };
+
+  // ===== Type filter (multi-select) =====
+  const TYPE_FILTER_KEY = "boxTypeFilter";
+  const VALID_TYPE_FILTERS = ["str", "dex", "qck", "psy", "int", "dual", "vs"];
+  function readTypeFilter() {
+    try {
+      const raw = localStorage.getItem(TYPE_FILTER_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.filter((t) => VALID_TYPE_FILTERS.includes(String(t).toLowerCase())));
+    } catch { return new Set(); }
+  }
+  let selectedTypeFilters = readTypeFilter();
+  function persistTypeFilter() {
+    localStorage.setItem(TYPE_FILTER_KEY, JSON.stringify(Array.from(selectedTypeFilters)));
+  }
+  function getCharTypeKey(char) {
+    if (isVsCharacterForTypeSort(char)) return "vs";
+    if (isDualCharacterForTypeSort(char)) return "dual";
+    return String(char?.type || "").toLowerCase();
+  }
+  function passesTypeFilter(char) {
+    if (!selectedTypeFilters.size) return true;
+    return selectedTypeFilters.has(getCharTypeKey(char));
+  }
 
   function normalizeSortKey(value) {
     const raw = String(value || "").toLowerCase();
@@ -381,12 +409,18 @@
     pumpArtworkWarmQueue();
   }
 
-  function scheduleIdleArtworkWarmup(list, limit = 14) {
+  function scheduleIdleArtworkWarmup(list, limit = 80) {
+    if (!ENABLE_IDLE_ARTWORK_WARMUP) return;
     if (!Array.isArray(list) || !list.length) return;
-    const urls = list
-      .slice(0, limit)
-      .map((c) => c?.artwork)
-      .filter(Boolean);
+    const urls = [];
+    list.slice(0, limit).forEach((c) => {
+      if (!c) return;
+      if (Array.isArray(c.artworkSources)) {
+        c.artworkSources.forEach((u) => u && urls.push(u));
+      } else if (c.artwork) {
+        urls.push(c.artwork);
+      }
+    });
     if (!urls.length) return;
     const run = () => urls.forEach((url) => queueArtworkWarm(url));
     if (typeof window.requestIdleCallback === "function") {
@@ -401,33 +435,38 @@
     img.decoding = "async";
     const token = String(Date.now() + Math.random());
     img.dataset.loadToken = token;
-    img.dataset.fallbackTried = "0";
     const applySrc = (src) => {
       if (img.dataset.loadToken !== token) return;
       setImgSrcIfChanged(img, src || PLACEHOLDER_IMG);
     };
     const ordered = orderImageSources(primary, secondary);
-    const p1 = ordered.primary;
-    const p2 = ordered.secondary;
+    const sources = [ordered.primary, ordered.secondary].filter((u, i, a) => u && a.indexOf(u) === i);
+    if (!sources.length) { applySrc(PLACEHOLDER_IMG); return; }
 
-    // Stabilite visuelle: n'efface pas l'image courante si la cible n'est pas prete.
-    if (decodedImageSet.has(p1)) {
-      applySrc(p1);
-      return;
-    }
+    // Cache hit: instantané
+    const cached = sources.find((u) => decodedImageSet.has(u));
+    if (cached) { applySrc(cached); return; }
+
     const hasStableSrc = !!img.getAttribute("src") && img.getAttribute("src") !== TRANSPARENT_PX;
     if (!hasStableSrc) {
       setImgSrcIfChanged(img, PLACEHOLDER_IMG);
     }
 
-    loadImageDecoded(p1)
-      .then(() => applySrc(p1))
-      .catch(() => {
-        if (img.dataset.loadToken !== token) return;
-        if (img.dataset.fallbackTried === "1") return applySrc(PLACEHOLDER_IMG);
-        img.dataset.fallbackTried = "1";
-        loadImageDecoded(p2).then(() => applySrc(p2)).catch(() => applySrc(PLACEHOLDER_IMG));
-      });
+    // Race en parallèle: la première source décodée gagne.
+    let settled = false;
+    let remaining = sources.length;
+    sources.forEach((url) => {
+      loadImageDecoded(url)
+        .then(() => {
+          if (settled) return;
+          settled = true;
+          applySrc(url);
+        })
+        .catch(() => {
+          remaining -= 1;
+          if (!settled && remaining === 0) applySrc(PLACEHOLDER_IMG);
+        });
+    });
   }
 
   function thumbUrl(id, base = THUMB_PRIMARY) {
@@ -437,6 +476,15 @@
   function artUrl(id) {
     const id4 = String(id).padStart(4, "0");
     return `${ART_BASE}/${id4[0]}/${id4[1]}00/${id4}.png`;
+  }
+  function getArtSources(id) {
+    const id4 = String(id).padStart(4, "0");
+    const tail = `${id4[0]}/${id4[1]}00/${id4}.png`;
+    return [
+      `${ART_BASE}/${tail}`,
+      `${ART_BASE_NOREF}/${tail}`,
+      `${ART_BASE_RAW}/${tail}`
+    ];
   }
 
   function getThumbSources(id) {
@@ -530,6 +578,8 @@
 
   let lightboxEl = null;
   let lightboxImg = null;
+  let lightboxThumbImg = null;
+  let lightboxRequestToken = 0;
   const SPECIAL_ID_REPLACEMENTS = new Map();
 
   // Data helpers (banners + evolutions)
@@ -1472,36 +1522,87 @@
   }
 
   function ensureLightbox() {
-    if (lightboxEl && lightboxImg) return;
+    if (lightboxEl && lightboxImg && lightboxThumbImg) return;
     lightboxEl = document.createElement("div");
     lightboxEl.id = "artwork-lightbox";
     lightboxEl.classList.add("hidden");
+    lightboxThumbImg = document.createElement("img");
+    lightboxThumbImg.className = "artwork-lightbox-thumb";
+    lightboxThumbImg.alt = "";
     lightboxImg = document.createElement("img");
+    lightboxImg.className = "artwork-lightbox-full";
     lightboxImg.alt = "Artwork";
-    lightboxEl.appendChild(lightboxImg);
+    lightboxEl.append(lightboxThumbImg, lightboxImg);
     document.body.appendChild(lightboxEl);
     lightboxEl.addEventListener("click", closeLightbox);
   }
 
-  function openLightbox(url, alt) {
-    if (!url) return;
+  function loadFirstDecoded(urls) {
+    const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+    if (!list.length) return Promise.reject(new Error("no source"));
+    // Si une source est deja decodee en cache, la renvoyer instantanement.
+    for (const url of list) {
+      if (decodedImageSet.has(url)) return Promise.resolve(url);
+    }
+    // Sinon, essayer une source apres l'autre pour eviter les chargements multiples inutiles.
+    let chain = Promise.reject(new Error("start"));
+    list.forEach((url) => {
+      chain = chain.catch(() => loadImageDecoded(url));
+    });
+    return chain.catch(() => Promise.reject(new Error("no source")));
+  }
+
+  function prewarmArtwork(urlOrList) {
+    const list = (Array.isArray(urlOrList) ? urlOrList : [urlOrList]).filter(Boolean);
+    const url = list.find((u) => !failedImageSet.has(u)) || list[0];
+    queueArtworkWarm(url);
+  }
+
+  function openLightbox(urlOrList, alt, thumbSrc) {
+    if (!urlOrList) return;
     ensureLightbox();
-    lightboxImg.alt = alt || "Artwork";
+    const requestToken = ++lightboxRequestToken;
+    const finalAlt = alt || "Artwork";
+    const list = (Array.isArray(urlOrList) ? urlOrList : [urlOrList]).filter(Boolean);
+    const cached = list.find((u) => decodedImageSet.has(u));
+    const fallbackThumb = thumbSrc || lightboxImg.getAttribute("src") || PLACEHOLDER_IMG;
+    lightboxThumbImg.src = cached ? TRANSPARENT_PX : fallbackThumb;
+    lightboxThumbImg.alt = "";
+    lightboxEl.classList.toggle("has-full-artwork", !!cached);
+    if (cached) {
+      lightboxImg.alt = finalAlt;
+      lightboxImg.src = cached;
+      lightboxEl.classList.remove("is-loading");
+      lightboxEl.classList.remove("hidden");
+      return;
+    }
+    // Ouvre avec l'icone deja disponible, puis remplace seulement quand l'artwork est decode.
+    lightboxImg.alt = "";
     lightboxImg.src = TRANSPARENT_PX;
-    loadImageDecoded(url)
-      .then(() => {
+    lightboxEl.classList.add("is-loading");
+    lightboxEl.classList.remove("hidden");
+    loadFirstDecoded(list)
+      .then((url) => {
+        if (requestToken !== lightboxRequestToken) return;
         lightboxImg.src = url;
-        lightboxEl.classList.remove("hidden");
+        lightboxImg.alt = finalAlt;
+        lightboxEl.classList.add("has-full-artwork");
+        lightboxEl.classList.remove("is-loading");
       })
       .catch(() => {
-        lightboxImg.src = PLACEHOLDER_IMG;
-        lightboxEl.classList.remove("hidden");
+        if (requestToken !== lightboxRequestToken) return;
+        lightboxImg.src = fallbackThumb;
+        lightboxImg.alt = finalAlt;
+        lightboxEl.classList.add("has-full-artwork");
+        lightboxEl.classList.remove("is-loading");
       });
   }
 
   function closeLightbox() {
     if (!lightboxEl) return;
+    lightboxRequestToken += 1;
     lightboxEl.classList.add("hidden");
+    lightboxEl.classList.remove("is-loading", "has-full-artwork");
   }
 
   function attachArtworkPreviewInteractions(item, character, options = {}) {
@@ -1525,8 +1626,18 @@
     const openPreview = () => {
       if (!character.artwork) return;
       item.dataset.previewOpened = "1";
-      openLightbox(character.artwork, character.name || "Artwork");
+      openLightbox(
+        character.artworkSources || character.artwork,
+        character.name || "Artwork",
+        character.icon || character.iconFallback
+      );
     };
+
+    const warm = (e) => {
+      if (e?.pointerType === "touch") return;
+      prewarmArtwork(character.artworkSources || character.artwork);
+    };
+    item.addEventListener("pointerenter", warm, { passive: true });
 
     item.addEventListener("mousedown", (e) => {
       if (enableMiddleClick && e.button === 1) e.preventDefault();
@@ -1670,6 +1781,7 @@
               icon: thumbSources.primary,
               iconFallback: thumbSources.fallback,
               artwork: artUrl(id),
+              artworkSources: getArtSources(id),
               __uid: String(id)
             };
           });
@@ -1877,7 +1989,7 @@
     updateGlobalProgress();
     const preferFamilyAliasSearch = !!q && !qDigits
       && dedupedPool.some((c) => hasFamilyMatch(c, q));
-    const filtered = q
+    let filtered = q
       ? dedupedPool.filter((c) => {
           const familyMatch = hasFamilyMatch(c, q);
           const nameMatch = hasWordMatch(c.name || "", q);
@@ -1886,6 +1998,9 @@
           return familyMatch || nameMatch || idMatch;
         })
       : dedupedPool.slice();
+    if (selectedTypeFilters.size) {
+      filtered = filtered.filter(passesTypeFilter);
+    }
 
     const sortBy = getCurrentSortKey();
     filtered.sort((a, b) => {
@@ -1943,7 +2058,7 @@
 
         item.addEventListener("click", (e) => {
           e.stopPropagation();
-          openLightbox(char.artwork, char.name || "Artwork");
+          openLightbox(char.artworkSources || char.artwork, char.name || "Artwork", char.icon || char.iconFallback);
         });
 
         grid.appendChild(item);
@@ -1983,7 +2098,7 @@
     });
     const ordered = [];
     const baseOrder = PAGE_BANNER_ORDER[page] || [];
-    const forceRrBannerShell = page === "rr" && !q;
+    const forceRrBannerShell = page === "rr" && !q && isAllMode;
     if (isAllMode) {
       if (forceRrBannerShell) {
         baseOrder.forEach((b) => { if (!ordered.includes(b)) ordered.push(b); });
@@ -2013,6 +2128,7 @@
     ordered.forEach((banner) => {
       const section = document.createElement("div");
       section.className = "ap-section";
+      if (page === "sugo") section.classList.add("is-sugo");
 
       const header = document.createElement("button");
       header.type = "button";
@@ -2130,7 +2246,7 @@
             return;
           }
           if (shouldOpenArtworkOnClick) {
-            openLightbox(char.artwork, char.name || "Artwork");
+            openLightbox(char.artworkSources || char.artwork, char.name || "Artwork", char.icon || char.iconFallback);
             return;
           }
           if (!uid) return;
@@ -2252,6 +2368,8 @@
         btn.disabled = hideRepeat;
       });
     }
+    const pageGroup = document.querySelector(".catalog-page-group");
+    if (pageGroup) pageGroup.hidden = next === "archive";
     renderCharacters(searchInput?.value || "");
   }
 
@@ -2259,7 +2377,19 @@
     btn.addEventListener("click", () => {
       closeEditPanel();
       deactivateSelectionMode();
-      setActiveCatalogPage(btn.dataset.page || "sugo");
+      const target = btn.dataset.page || "sugo";
+      if (target === "archive" && activeCatalogPage === "archive") {
+        const prev = localStorage.getItem("catalogPagePrev");
+        const fallback = ["sugo", "rr", "f2p"].includes(prev) ? prev : "sugo";
+        setActiveCatalogPage(fallback);
+        return;
+      }
+      if (target !== "archive" || activeCatalogPage !== "archive") {
+        if (activeCatalogPage && activeCatalogPage !== "archive") {
+          localStorage.setItem("catalogPagePrev", activeCatalogPage);
+        }
+      }
+      setActiveCatalogPage(target);
     });
   });
 
@@ -3033,7 +3163,65 @@
     closeSortMenu();
   });
 
-  // Island panel (Gather Island)
+  // ===== Type filter dropdown =====
+  const typeFilterToggle = document.getElementById("type-filter-toggle");
+  const typeFilterMenu = document.getElementById("type-filter-menu");
+  const typeFilterBadge = document.getElementById("type-filter-badge");
+  const typeFilterClear = document.getElementById("type-filter-clear");
+  function closeTypeFilterMenu() {
+    if (!typeFilterMenu || !typeFilterToggle) return;
+    typeFilterMenu.hidden = true;
+    typeFilterToggle.setAttribute("aria-expanded", "false");
+  }
+  function openTypeFilterMenu() {
+    if (!typeFilterMenu || !typeFilterToggle) return;
+    typeFilterMenu.hidden = false;
+    typeFilterToggle.setAttribute("aria-expanded", "true");
+  }
+  function refreshTypeFilterUI() {
+    if (!typeFilterMenu) return;
+    typeFilterMenu.querySelectorAll(".type-filter-item").forEach((btn) => {
+      const t = String(btn.dataset.type || "").toLowerCase();
+      btn.setAttribute("aria-pressed", selectedTypeFilters.has(t) ? "true" : "false");
+    });
+    if (typeFilterBadge) {
+      const n = selectedTypeFilters.size;
+      typeFilterBadge.hidden = n === 0;
+      typeFilterBadge.textContent = String(n);
+    }
+  }
+  refreshTypeFilterUI();
+  typeFilterToggle?.addEventListener("click", () => {
+    closeEditPanel();
+    deactivateSelectionMode();
+    closeSortMenu();
+    if (typeFilterToggle.getAttribute("aria-expanded") === "true") closeTypeFilterMenu();
+    else openTypeFilterMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!typeFilterMenu || !typeFilterToggle) return;
+    if (!typeFilterMenu.contains(e.target) && !typeFilterToggle.contains(e.target)) closeTypeFilterMenu();
+  });
+  typeFilterMenu?.addEventListener("click", (e) => {
+    const item = e.target.closest(".type-filter-item");
+    if (!item) return;
+    const t = String(item.dataset.type || "").toLowerCase();
+    if (!VALID_TYPE_FILTERS.includes(t)) return;
+    if (selectedTypeFilters.has(t)) selectedTypeFilters.delete(t);
+    else selectedTypeFilters.add(t);
+    persistTypeFilter();
+    refreshTypeFilterUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  typeFilterClear?.addEventListener("click", () => {
+    if (!selectedTypeFilters.size) return;
+    selectedTypeFilters.clear();
+    persistTypeFilter();
+    refreshTypeFilterUI();
+    renderCharacters(searchInput?.value || "");
+  });
+
+
   const ISLAND_DATA_URL = "data/db-gather-island.json";
   let islandDataCache = null;
 
@@ -3581,3 +3769,20 @@
 
 
 
+
+(() => {
+  const btn = document.getElementById("scroll-top-btn");
+  if (!btn) return;
+  const scroller = document.querySelector("main") || document.scrollingElement || window;
+  const getY = () => (scroller === window ? window.scrollY : scroller.scrollTop);
+  const onScroll = () => {
+    btn.classList.toggle("is-visible", getY() > 300);
+  };
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("scroll", onScroll, { passive: true });
+  btn.addEventListener("click", () => {
+    if (scroller === window) window.scrollTo({ top: 0, behavior: "smooth" });
+    else scroller.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  onScroll();
+})();
