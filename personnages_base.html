@@ -194,6 +194,10 @@
           <input id="settings-reset-island" type="checkbox" />
           <span>Gather Island</span>
         </label>
+        <label class="settings-reset-option">
+          <input id="settings-reset-ships" type="checkbox" />
+          <span>Ships</span>
+        </label>
         <label class="settings-reset-option is-all">
           <input id="settings-reset-all" type="checkbox" />
           <span>Totalité</span>
@@ -371,6 +375,14 @@
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" fill="currentColor"/>
               <path d="M20.71 7.04a1 1 0 000-1.41L18.37 3.29a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="ships-toggle" class="filter-btn" title="Ships" aria-label="Ships" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M7 9h10l-1.5 6H8.5L7 9z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" fill="currentColor" fill-opacity="0.18"/>
+              <path d="M3 16c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 19c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
           <button id="collector-island-toggle" class="filter-btn" title="Gather Island" aria-label="Gather Island">

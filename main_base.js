@@ -19,6 +19,108 @@
   const THUMB_JAP_PRIMARY_IDS = new Set(["4170","2909","2830","2784","4167"]);
   const THUMB_ID_OVERRIDES = new Map([["231", "232"], ["232", "231"]]);
 
+  // ===== Ships =====
+  const SHIPS_DATA_URL = "https://raw.githubusercontent.com/optc-db/optc-db.github.io/master/common/data/ships.js";
+  const SHIPS_THUMB_BASE = "https://raw.githubusercontent.com/optc-db/optc-db.github.io/master/api/images/thumbnail/ship";
+  const SHIPS_DATA_CACHE_KEY = "ships:data:v1";
+  const SHIPS_DATA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const SHIPS_STATE_KEY = "ships:state:v1";
+  const SHIP_LEVEL_MIN = 1;
+  const SHIP_LEVEL_MAX = 10;
+  let shipsList = [];
+  let shipsLoaded = false;
+  let shipsLoadingPromise = null;
+  function readShipsState() {
+    try {
+      const raw = localStorage.getItem(SHIPS_STATE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : {};
+    } catch { return {}; }
+  }
+  let shipsState = readShipsState();
+  function persistShipsState() {
+    try { localStorage.setItem(SHIPS_STATE_KEY, JSON.stringify(shipsState)); } catch {}
+  }
+  function getShipEntry(idx) {
+    const cur = shipsState[String(idx)];
+    if (cur && typeof cur === "object") {
+      const owned = !!cur.owned;
+      const lvl = Math.max(SHIP_LEVEL_MIN, Math.min(SHIP_LEVEL_MAX, parseInt(cur.level, 10) || SHIP_LEVEL_MIN));
+      return { owned, level: lvl };
+    }
+    return { owned: false, level: SHIP_LEVEL_MIN };
+  }
+  function setShipEntry(idx, patch) {
+    const cur = getShipEntry(idx);
+    const next = { ...cur, ...patch };
+    next.level = Math.max(SHIP_LEVEL_MIN, Math.min(SHIP_LEVEL_MAX, parseInt(next.level, 10) || SHIP_LEVEL_MIN));
+    next.owned = !!next.owned;
+    if (!next.owned && next.level === SHIP_LEVEL_MIN) {
+      delete shipsState[String(idx)];
+    } else {
+      shipsState[String(idx)] = { owned: next.owned, level: next.level };
+    }
+    persistShipsState();
+  }
+  function parseShipsSource(text) {
+    try {
+      const fn = new Function("var window={};\n" + text + "\n;return window.ships||[];");
+      const arr = fn();
+      if (!Array.isArray(arr)) return [];
+      return arr.map((s, i) => {
+        const rawThumb = s?.thumb;
+        const thumb = (rawThumb && String(rawThumb) !== "null") ? String(rawThumb) : "";
+        return {
+          idx: i,
+          name: String(s?.name || `Ship ${i + 1}`),
+          thumb,
+          description: String(s?.description || "")
+        };
+      });
+    } catch (e) { console.warn("[ships] parse failed", e); return []; }
+  }
+  async function loadShips() {
+    if (shipsLoaded) return shipsList;
+    if (shipsLoadingPromise) return shipsLoadingPromise;
+    shipsLoadingPromise = (async () => {
+      try {
+        const raw = localStorage.getItem(SHIPS_DATA_CACHE_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached && Array.isArray(cached.list) && (Date.now() - (cached.t || 0) < SHIPS_DATA_TTL_MS)) {
+            shipsList = cached.list;
+            shipsLoaded = true;
+            fetch(SHIPS_DATA_URL).then((r) => r.text()).then((t) => {
+              const fresh = parseShipsSource(t);
+              if (fresh.length) {
+                shipsList = fresh;
+                try { localStorage.setItem(SHIPS_DATA_CACHE_KEY, JSON.stringify({ t: Date.now(), list: fresh })); } catch {}
+              }
+            }).catch(() => {});
+            return shipsList;
+          }
+        }
+      } catch {}
+      try {
+        const res = await fetch(SHIPS_DATA_URL);
+        const text = await res.text();
+        const list = parseShipsSource(text);
+        shipsList = list;
+        shipsLoaded = true;
+        try { localStorage.setItem(SHIPS_DATA_CACHE_KEY, JSON.stringify({ t: Date.now(), list })); } catch {}
+      } catch (e) {
+        console.warn("[ships] load failed", e);
+        shipsList = [];
+        shipsLoaded = true;
+      }
+      return shipsList;
+    })();
+    return shipsLoadingPromise;
+  }
+  function shipThumbUrl(thumb) {
+    return `${SHIPS_THUMB_BASE}/${encodeURIComponent(thumb)}`;
+  }
+
   // State
   let characters = [];
   let allUnitsById = new Map();
@@ -554,6 +656,7 @@
   const settingsResetUnits = document.getElementById("settings-reset-units");
   const settingsResetIsland = document.getElementById("settings-reset-island");
   const settingsResetAll = document.getElementById("settings-reset-all");
+  const settingsResetShips = document.getElementById("settings-reset-ships");
   const settingsResetApply = document.getElementById("settings-reset-apply");
   const settingsResetCancel = document.getElementById("settings-reset-cancel");
   const themeToggle = document.getElementById("theme-toggle");
@@ -1884,13 +1987,146 @@
     return `${completion}<span class="ap-count-side ap-count-missing" aria-label="${missing} missing">${missing}</span>`;
   }
 
+  function renderShipsCatalog(query = "") {
+    if (!characterList) return;
+    characterList.innerHTML = "";
+    if (!shipsLoaded) {
+      const loading = document.createElement("div");
+      loading.className = "empty-state";
+      loading.textContent = "Loading ships…";
+      characterList.appendChild(loading);
+      requestAnimationFrame(applyDynamicMainPadding);
+      return;
+    }
+    const q = normalizeForSearch(query || (searchInput?.value || ""));
+    const mode = catalogOwnershipMode;
+    const visible = shipsList.filter((s) => {
+      if (q && !normalizeForSearch(s.name).includes(q)) return false;
+      const ent = getShipEntry(s.idx);
+      if (mode === "owned") return ent.owned;
+      if (mode === "missing") return !ent.owned;
+      return true;
+    });
+    if (!visible.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No ship found.";
+      characterList.appendChild(empty);
+      requestAnimationFrame(applyDynamicMainPadding);
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "ap-grid ap-grid-inner ships-grid";
+    visible.forEach((s) => {
+      const ent = getShipEntry(s.idx);
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "ap-item ship-tile";
+      if (ent.owned) item.classList.add("ship-owned");
+      if (ent.owned && ent.level === SHIP_LEVEL_MAX) item.classList.add("is-max");
+      item.title = `${s.name} — Lv ${ent.level}/${SHIP_LEVEL_MAX}`;
+
+      const img = document.createElement("img");
+      img.alt = s.name;
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.fetchPriority = "low";
+      setImgWithFallback(img, s.thumb ? shipThumbUrl(s.thumb) : PLACEHOLDER_IMG, PLACEHOLDER_IMG);
+      item.appendChild(img);
+
+      if (ent.owned) {
+        const lvl = document.createElement("span");
+        lvl.className = "ship-tile-level";
+        lvl.textContent = `Lv ${ent.level}`;
+        item.appendChild(lvl);
+      }
+
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const cur = getShipEntry(s.idx);
+        if (!cur.owned) {
+          setShipEntry(s.idx, { owned: true, level: Math.max(cur.level, SHIP_LEVEL_MIN) });
+          renderShipsCatalog(query);
+        } else {
+          openShipEditPopup(s);
+        }
+      });
+      const openEdit = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openShipEditPopup(s);
+      };
+      item.addEventListener("contextmenu", openEdit);
+
+      grid.appendChild(item);
+    });
+    characterList.appendChild(grid);
+    requestAnimationFrame(applyDynamicMainPadding);
+  }
+
+  function openShipEditPopup(ship) {
+    const ent = getShipEntry(ship.idx);
+    let overlay = document.getElementById("ship-edit-overlay");
+    if (overlay) overlay.remove();
+    overlay = document.createElement("div");
+    overlay.id = "ship-edit-overlay";
+    overlay.className = "confirm-overlay ship-edit-overlay";
+    overlay.innerHTML = `
+      <div class="confirm-dialog ship-edit-dialog" role="dialog" aria-modal="true">
+        <div class="ship-edit-head">
+          <img class="ship-edit-thumb" alt="" />
+          <div class="ship-edit-info">
+            <div class="ship-edit-name"></div>
+            <div class="ship-edit-desc"></div>
+          </div>
+        </div>
+        <div class="ship-edit-row">
+          <span>Level</span>
+          <span class="ship-edit-lvl-val">${ent.level}/${SHIP_LEVEL_MAX}</span>
+        </div>
+        <input class="ship-edit-slider" type="range" min="${SHIP_LEVEL_MIN}" max="${SHIP_LEVEL_MAX}" step="1" value="${ent.level}" />
+        <div class="ship-edit-quick">
+          ${[1,3,5,7,9,SHIP_LEVEL_MAX].map((v) => `<button type="button" data-lvl="${v}" class="ship-edit-quick-btn">${v === SHIP_LEVEL_MAX ? "Max" : v}</button>`).join("")}
+        </div>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-btn ship-edit-unown">Mark unowned</button>
+          <button type="button" class="confirm-btn is-primary ship-edit-save">Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const dialog = overlay.querySelector(".ship-edit-dialog");
+    overlay.querySelector(".ship-edit-thumb").src = shipThumbUrl(ship.thumb);
+    overlay.querySelector(".ship-edit-name").textContent = ship.name;
+    overlay.querySelector(".ship-edit-desc").textContent = ship.description || "";
+    const slider = overlay.querySelector(".ship-edit-slider");
+    const lvlVal = overlay.querySelector(".ship-edit-lvl-val");
+    slider.addEventListener("input", () => { lvlVal.textContent = `${slider.value}/${SHIP_LEVEL_MAX}`; });
+    overlay.querySelectorAll(".ship-edit-quick-btn").forEach((b) => {
+      b.addEventListener("click", () => { slider.value = String(b.dataset.lvl); lvlVal.textContent = `${slider.value}/${SHIP_LEVEL_MAX}`; });
+    });
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (e) => { if (!e.target.closest(".ship-edit-dialog")) close(); });
+    overlay.querySelector(".ship-edit-save").addEventListener("click", () => {
+      setShipEntry(ship.idx, { owned: true, level: parseInt(slider.value, 10) || SHIP_LEVEL_MIN });
+      close();
+      renderShipsCatalog(searchInput?.value || "");
+    });
+    overlay.querySelector(".ship-edit-unown").addEventListener("click", () => {
+      setShipEntry(ship.idx, { owned: false, level: SHIP_LEVEL_MIN });
+      close();
+      renderShipsCatalog(searchInput?.value || "");
+    });
+    setTimeout(() => dialog.focus(), 0);
+  }
+
   function renderCharacters(query = "") {
     if (!characterList) return;
+    if (activeCatalogPage === "ships") { renderShipsCatalog(query); return; }
     const q = normalizeForSearch(query || "");
     const qDigits = String(query || "").replace(/\D/g, "");
-    const page = ["sugo", "rr", "f2p", "archive"].includes(activeCatalogPage) ? activeCatalogPage : "sugo";
+    const page = ["sugo", "rr", "f2p", "archive", "ships"].includes(activeCatalogPage) ? activeCatalogPage : "sugo";
     const getCatalogPoolForPage = (pageKey) => {
-      const safePage = ["sugo", "rr", "f2p", "archive"].includes(pageKey) ? pageKey : "sugo";
+      const safePage = ["sugo", "rr", "f2p", "archive", "ships"].includes(pageKey) ? pageKey : "sugo";
       if (safePage === "archive") {
         return characters
           .filter((c) => !/-[12]$/.test(String(c?.id || "")))
@@ -2346,7 +2582,7 @@
   });
 
   function setActiveCatalogPage(page) {
-    const next = ["sugo", "rr", "f2p", "archive"].includes(page) ? page : "sugo";
+    const next = ["sugo", "rr", "f2p", "archive", "ships"].includes(page) ? page : "sugo";
     const previous = activeCatalogPage;
     if (previous && previous !== next) {
       // Close expanded banners from the page we are leaving.
@@ -2369,7 +2605,19 @@
       });
     }
     const pageGroup = document.querySelector(".catalog-page-group");
-    if (pageGroup) pageGroup.hidden = next === "archive";
+    if (pageGroup) pageGroup.hidden = (next === "archive" || next === "ships");
+    document.body.classList.toggle("is-ships-mode", next === "ships");
+    const shipsBtnEl = document.getElementById("ships-toggle");
+    if (shipsBtnEl) {
+      const on = next === "ships";
+      shipsBtnEl.classList.toggle("is-active", on);
+      shipsBtnEl.setAttribute("aria-pressed", String(on));
+    }
+    if (next === "ships") {
+      loadShips().then(() => {
+        if (activeCatalogPage === "ships") renderShipsCatalog();
+      });
+    }
     renderCharacters(searchInput?.value || "");
   }
 
@@ -2380,18 +2628,36 @@
       const target = btn.dataset.page || "sugo";
       if (target === "archive" && activeCatalogPage === "archive") {
         const prev = localStorage.getItem("catalogPagePrev");
-        const fallback = ["sugo", "rr", "f2p"].includes(prev) ? prev : "sugo";
+        const fallback = ["sugo", "rr", "f2p", "ships"].includes(prev) ? prev : "sugo";
         setActiveCatalogPage(fallback);
         return;
       }
       if (target !== "archive" || activeCatalogPage !== "archive") {
-        if (activeCatalogPage && activeCatalogPage !== "archive") {
+        if (activeCatalogPage && activeCatalogPage !== "archive" && activeCatalogPage !== "ships") {
           localStorage.setItem("catalogPagePrev", activeCatalogPage);
         }
       }
       setActiveCatalogPage(target);
     });
   });
+
+  const shipsToggleBtn = document.getElementById("ships-toggle");
+  if (shipsToggleBtn) {
+    shipsToggleBtn.addEventListener("click", () => {
+      closeEditPanel();
+      deactivateSelectionMode();
+      if (activeCatalogPage === "ships") {
+        const prev = localStorage.getItem("catalogPagePrev");
+        const fallback = ["sugo", "rr", "f2p"].includes(prev) ? prev : "sugo";
+        setActiveCatalogPage(fallback);
+        return;
+      }
+      if (activeCatalogPage && activeCatalogPage !== "archive" && activeCatalogPage !== "ships") {
+        localStorage.setItem("catalogPagePrev", activeCatalogPage);
+      }
+      setActiveCatalogPage("ships");
+    });
+  }
 
   // Selection mode toggle (Edit tools)
   let isSelectionMode = false;
@@ -2800,7 +3066,7 @@
   });
 
   const BACKUP_FILE_PREFIX = "optc-sugo-manager-backup";
-  const CATALOG_PAGES = ["sugo", "rr", "f2p", "archive"];
+  const CATALOG_PAGES = ["sugo", "rr", "f2p", "archive", "ships"];
 
   function cloneJsonSafe(value, fallback) {
     try {
@@ -2849,6 +3115,7 @@
         ownedCharacters: cloneJsonSafe(savedBox, []),
         unitProgress: cloneJsonSafe(unitStateMap, {}),
         gatherIsland: cloneJsonSafe(readIslandLevels(), {}),
+        ships: cloneJsonSafe(shipsState, {}),
         preferences: {
           theme: currentTheme,
           sortBy: getCurrentSortKey(),
@@ -2951,6 +3218,18 @@
     persistUnitStateMap();
     localStorage.setItem(BOX_SCHEMA_KEY, BOX_SCHEMA_VERSION);
     saveIslandLevels(importedIsland);
+    if (data.ships && typeof data.ships === "object" && !Array.isArray(data.ships)) {
+      const incoming = {};
+      Object.entries(data.ships).forEach(([k, v]) => {
+        if (!v || typeof v !== "object") return;
+        const lvl = Math.max(SHIP_LEVEL_MIN, Math.min(SHIP_LEVEL_MAX, parseInt(v.level, 10) || SHIP_LEVEL_MIN));
+        const owned = !!v.owned;
+        if (!owned && lvl === SHIP_LEVEL_MIN) return;
+        incoming[String(k)] = { owned, level: lvl };
+      });
+      shipsState = incoming;
+      persistShipsState();
+    }
 
     if (importedPrefs.theme === "dark" || importedPrefs.theme === "light") {
       applyTheme(importedPrefs.theme);
@@ -3026,7 +3305,8 @@
   function getResetScopesSelection() {
     return {
       units: Boolean(settingsResetUnits?.checked),
-      island: Boolean(settingsResetIsland?.checked)
+      island: Boolean(settingsResetIsland?.checked),
+      ships: Boolean(settingsResetShips?.checked)
     };
   }
 
@@ -3040,9 +3320,13 @@
       if (applyAll) settingsResetIsland.checked = true;
       settingsResetIsland.disabled = applyAll;
     }
-    const { units, island } = getResetScopesSelection();
+    if (settingsResetShips) {
+      if (applyAll) settingsResetShips.checked = true;
+      settingsResetShips.disabled = applyAll;
+    }
+    const { units, island, ships } = getResetScopesSelection();
     if (settingsResetApply) {
-      settingsResetApply.disabled = !(units || island);
+      settingsResetApply.disabled = !(units || island || ships);
     }
   }
 
@@ -3050,6 +3334,7 @@
     if (!settingsResetDialog) return;
     if (settingsResetUnits) settingsResetUnits.checked = false;
     if (settingsResetIsland) settingsResetIsland.checked = false;
+    if (settingsResetShips) settingsResetShips.checked = false;
     if (settingsResetAll) settingsResetAll.checked = false;
     syncSettingsResetDialogState();
     settingsResetDialog.hidden = false;
@@ -3074,13 +3359,18 @@
       saveIslandLevels({});
       changed = true;
     }
+    if (scopes.ships) {
+      shipsState = {};
+      persistShipsState();
+      changed = true;
+    }
     if (!changed) return;
     renderCharacters(searchInput?.value || "");
     if (islandPanel && !islandPanel.hidden) renderIslandPanel();
     if (islandCalcPanel && !islandCalcPanel.hidden) renderIslandCalcPanel();
   }
 
-  const resetScopeInputs = [settingsResetUnits, settingsResetIsland, settingsResetAll].filter(Boolean);
+  const resetScopeInputs = [settingsResetUnits, settingsResetIsland, settingsResetShips, settingsResetAll].filter(Boolean);
   resetScopeInputs.forEach((input) => {
     input.addEventListener("change", syncSettingsResetDialogState);
   });
@@ -3097,6 +3387,7 @@
     const labels = [];
     if (scopes.units) labels.push("Perso");
     if (scopes.island) labels.push("Gather Island");
+    if (scopes.ships) labels.push("Ships");
     if (!labels.length) return;
 
     const confirmStep1 = window.confirm(`Remettre a zero: ${labels.join(" + ")} ?`);
