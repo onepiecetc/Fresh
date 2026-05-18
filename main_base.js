@@ -20,11 +20,13 @@
   const THUMB_ID_OVERRIDES = new Map([["231", "232"], ["232", "231"]]);
 
   // ===== Ships =====
-  const SHIPS_DATA_URL = "https://raw.githubusercontent.com/optc-db/optc-db.github.io/master/common/data/ships.js";
-  const SHIPS_THUMB_BASE = "https://raw.githubusercontent.com/optc-db/optc-db.github.io/master/api/images/thumbnail/ship";
-  const SHIPS_DATA_CACHE_KEY = "ships:data:v1";
+  const SHIPS_DATA_URL = "https://raw.githubusercontent.com/blzn50/optc-ships/refs/heads/master/src/data/units.ts";
+  const SHIPS_DETAILS_URL = "https://raw.githubusercontent.com/blzn50/optc-ships/refs/heads/master/src/data/details.ts";
+  const SHIPS_THUMB_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/icon";
+  const SHIPS_ART_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/full";
+  const SHIPS_DATA_CACHE_KEY = "ships:data:v3";
   const SHIPS_DATA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const SHIPS_STATE_KEY = "ships:state:v1";
+  const SHIPS_STATE_KEY = "ships:state:v2";
   const SHIP_LEVEL_MIN = 1;
   const SHIP_LEVEL_MAX = 10;
   let shipsList = [];
@@ -62,22 +64,89 @@
     }
     persistShipsState();
   }
-  function parseShipsSource(text) {
+  function getShipIconNumber(thumb) {
+    const match = String(thumb || "").match(/^ship_(\d{4})(?:_(?:t2|thumbnail))?\.png$/i);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+  function formatShipIconFilename(num) {
+    return Number.isFinite(num) && num > 0 ? `ship_${String(num).padStart(4, "0")}_thumbnail.png` : "";
+  }
+  function formatShipArtworkFilename(num) {
+    return Number.isFinite(num) && num > 0 ? `ship_${String(num).padStart(4, "0")}_full.png` : "";
+  }
+  function shipIconFilename(thumb) {
+    const raw = String(thumb || "");
+    const iconNumber = getShipIconNumber(raw);
+    return iconNumber ? formatShipIconFilename(iconNumber) : raw;
+  }
+  function stripTypeScriptImports(text) {
+    return String(text || "").replace(/^import[^\n]*\n/gm, "");
+  }
+  function getPSTTimestamp(dateString) {
+    return new Date(String(dateString || "") + "-08:00").getTime();
+  }
+  function convertToPSTTimestamp() {
+    const dateTime = new Date();
+    dateTime.setHours(dateTime.getUTCHours() - 8);
+    return dateTime.getTime();
+  }
+  function parseShipsDetailsSource(text) {
     try {
-      const fn = new Function("var window={};\n" + text + "\n;return window.ships||[];");
-      const arr = fn();
+      const source = stripTypeScriptImports(text)
+        .replace(/export\s+const\s+details\s*:\s*Record<number,\s*ShipInfo>\s*=\s*/, "const details = ");
+      return new Function(`${source}\n;return details||{};`)();
+    } catch (e) { console.warn("[ships] details parse failed", e); return {}; }
+  }
+  function withShipDetailsFallback(details) {
+    const source = (details && typeof details === "object") ? details : {};
+    return new Proxy(source, {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        return { effect: [] };
+      }
+    });
+  }
+  function parseShipUnitsSource(text, details = {}) {
+    try {
+      const source = stripTypeScriptImports(text)
+        .replace(/export\s+const\s+units\s*:\s*ShipOverview\[\]\s*=\s*/, "const units = ")
+        .replace(/export\s+const\s+unitsCount\s*=\s*units\.length\s*;?/g, "");
+      const fn = new Function("details", "convertToPSTTimestamp", "getPSTTimestamp", `${source}\n;return units||[];`);
+      const arr = fn(withShipDetailsFallback(details), convertToPSTTimestamp, getPSTTimestamp);
       if (!Array.isArray(arr)) return [];
       return arr.map((s, i) => {
-        const rawThumb = s?.thumb;
-        const thumb = (rawThumb && String(rawThumb) !== "null") ? String(rawThumb) : "";
+        const id = parseInt(s?.id, 10) || (i + 1);
+        const icon = formatShipIconFilename(id);
+        const artwork = shipArtworkUrl({ id });
+        const effect = String(s?.effect || "");
+        const special = String(s?.special || "");
         return {
-          idx: i,
+          idx: id,
+          id,
           name: String(s?.name || `Ship ${i + 1}`),
-          thumb,
-          description: String(s?.description || "")
+          thumb: icon,
+          icon,
+          artwork,
+          description: effect,
+          effect,
+          hasSpecial: String(s?.hasSpecial || "no"),
+          special,
+          colaCount: Number.isFinite(Number(s?.colaCount)) ? Number(s.colaCount) : null,
+          superColaCount: Number.isFinite(Number(s?.superColaCount)) ? Number(s.superColaCount) : null
         };
       });
-    } catch (e) { console.warn("[ships] parse failed", e); return []; }
+    } catch (e) { console.warn("[ships] units parse failed", e); return []; }
+  }
+  async function fetchShipsList() {
+    const [unitsRes, detailsRes] = await Promise.all([
+      fetch(SHIPS_DATA_URL),
+      fetch(SHIPS_DETAILS_URL)
+    ]);
+    const [unitsText, detailsText] = await Promise.all([
+      unitsRes.text(),
+      detailsRes.ok ? detailsRes.text() : Promise.resolve("")
+    ]);
+    return parseShipUnitsSource(unitsText, parseShipsDetailsSource(detailsText));
   }
   async function loadShips() {
     if (shipsLoaded) return shipsList;
@@ -90,8 +159,7 @@
           if (cached && Array.isArray(cached.list) && (Date.now() - (cached.t || 0) < SHIPS_DATA_TTL_MS)) {
             shipsList = cached.list;
             shipsLoaded = true;
-            fetch(SHIPS_DATA_URL).then((r) => r.text()).then((t) => {
-              const fresh = parseShipsSource(t);
+            fetchShipsList().then((fresh) => {
               if (fresh.length) {
                 shipsList = fresh;
                 try { localStorage.setItem(SHIPS_DATA_CACHE_KEY, JSON.stringify({ t: Date.now(), list: fresh })); } catch {}
@@ -102,9 +170,7 @@
         }
       } catch {}
       try {
-        const res = await fetch(SHIPS_DATA_URL);
-        const text = await res.text();
-        const list = parseShipsSource(text);
+        const list = await fetchShipsList();
         shipsList = list;
         shipsLoaded = true;
         try { localStorage.setItem(SHIPS_DATA_CACHE_KEY, JSON.stringify({ t: Date.now(), list })); } catch {}
@@ -118,7 +184,13 @@
     return shipsLoadingPromise;
   }
   function shipThumbUrl(thumb) {
-    return `${SHIPS_THUMB_BASE}/${encodeURIComponent(thumb)}`;
+    const filename = shipIconFilename(thumb);
+    return filename ? `${SHIPS_THUMB_BASE}/${encodeURIComponent(filename)}` : PLACEHOLDER_IMG;
+  }
+  function shipArtworkUrl(ship) {
+    const id = parseInt(ship?.id || ship?.idx, 10) || 0;
+    const filename = formatShipArtworkFilename(id);
+    return filename ? `${SHIPS_ART_BASE}/${encodeURIComponent(filename)}` : "";
   }
 
   // State
@@ -130,6 +202,7 @@
   let charactersLoaded = false;
   let charactersLoading = null;
   const imageCache = new Map();
+  const shipIconNormalizeCache = new Map();
   const failedImageSet = new Set();
   const decodedImageSet = new Set();
   const artworkWarmQueued = new Set();
@@ -565,6 +638,119 @@
           applySrc(url);
         })
         .catch(() => {
+          remaining -= 1;
+          if (!settled && remaining === 0) applySrc(PLACEHOLDER_IMG);
+        });
+    });
+  }
+
+  function loadNormalizedShipIcon(url) {
+    if (!url || url === PLACEHOLDER_IMG || url.startsWith("data:")) return Promise.resolve(url || PLACEHOLDER_IMG);
+    if (shipIconNormalizeCache.has(url)) return shipIconNormalizeCache.get(url);
+    const p = new Promise((resolve, reject) => {
+      const source = new Image();
+      source.crossOrigin = "anonymous";
+      source.decoding = "async";
+      source.onload = () => {
+        try {
+          const w = source.naturalWidth || source.width;
+          const h = source.naturalHeight || source.height;
+          if (!w || !h) { resolve(url); return; }
+
+          const scan = document.createElement("canvas");
+          scan.width = w;
+          scan.height = h;
+          const scanCtx = scan.getContext("2d", { willReadFrequently: true });
+          if (!scanCtx) { resolve(url); return; }
+          scanCtx.drawImage(source, 0, 0);
+          const pixels = scanCtx.getImageData(0, 0, w, h).data;
+          let minX = w;
+          let minY = h;
+          let maxX = -1;
+          let maxY = -1;
+          for (let y = 0; y < h; y += 1) {
+            for (let x = 0; x < w; x += 1) {
+              const alpha = pixels[((y * w + x) * 4) + 3];
+              if (alpha <= 8) continue;
+              if (x < minX) minX = x;
+              if (y < minY) minY = y;
+              if (x > maxX) maxX = x;
+              if (y > maxY) maxY = y;
+            }
+          }
+          if (maxX < minX || maxY < minY) { resolve(url); return; }
+
+          const canvasSize = 160;
+          const padding = 10;
+          const cropW = maxX - minX + 1;
+          const cropH = maxY - minY + 1;
+          const scale = Math.min((canvasSize - padding * 2) / cropW, (canvasSize - padding * 2) / cropH);
+          const drawW = Math.round(cropW * scale);
+          const drawH = Math.round(cropH * scale);
+          const out = document.createElement("canvas");
+          out.width = canvasSize;
+          out.height = canvasSize;
+          const outCtx = out.getContext("2d");
+          if (!outCtx) { resolve(url); return; }
+          outCtx.imageSmoothingEnabled = true;
+          outCtx.imageSmoothingQuality = "high";
+          outCtx.drawImage(
+            source,
+            minX,
+            minY,
+            cropW,
+            cropH,
+            Math.round((canvasSize - drawW) / 2),
+            Math.round((canvasSize - drawH) / 2),
+            drawW,
+            drawH
+          );
+          resolve(out.toDataURL("image/png"));
+        } catch {
+          resolve(url);
+        }
+      };
+      source.onerror = reject;
+      source.src = url;
+    }).catch((err) => {
+      shipIconNormalizeCache.delete(url);
+      throw err;
+    });
+    shipIconNormalizeCache.set(url, p);
+    return p;
+  }
+
+  function setShipImgWithFallback(img, primary, secondary) {
+    if (!img) return;
+    img.decoding = "async";
+    const token = String(Date.now() + Math.random());
+    img.dataset.loadToken = token;
+    const applySrc = (src) => {
+      if (img.dataset.loadToken !== token) return;
+      setImgSrcIfChanged(img, src || PLACEHOLDER_IMG);
+    };
+    const ordered = orderImageSources(primary, secondary);
+    const sources = [ordered.primary, ordered.secondary].filter((u, i, a) => u && a.indexOf(u) === i);
+    if (!sources.length) { applySrc(PLACEHOLDER_IMG); return; }
+
+    const hasStableSrc = !!img.getAttribute("src") && img.getAttribute("src") !== TRANSPARENT_PX;
+    if (!hasStableSrc) {
+      setImgSrcIfChanged(img, PLACEHOLDER_IMG);
+    }
+
+    let settled = false;
+    let remaining = sources.length;
+    sources.forEach((url) => {
+      loadNormalizedShipIcon(url)
+        .then((normalizedUrl) => {
+          if (settled) return;
+          settled = true;
+          decodedImageSet.add(url);
+          failedImageSet.delete(url);
+          applySrc(normalizedUrl || url);
+        })
+        .catch(() => {
+          failedImageSet.add(url);
           remaining -= 1;
           if (!settled && remaining === 0) applySrc(PLACEHOLDER_IMG);
         });
@@ -1987,9 +2173,30 @@
     return `${completion}<span class="ap-count-side ap-count-missing" aria-label="${missing} missing">${missing}</span>`;
   }
 
+  function setProgressCounts(ownedCount, totalCount) {
+    if (!progressFill || !progressLabel) return;
+    const total = Math.max(0, Math.round(Number(totalCount) || 0));
+    const owned = Math.max(0, Math.min(total, Math.round(Number(ownedCount) || 0)));
+    const ratio = total > 0 ? (owned / total) : 0;
+    const pct = Math.max(0, Math.min(100, ratio * 100));
+    progressFill.style.width = `${pct}%`;
+    progressLabel.textContent = `${owned}/${total} (${pct.toFixed(1)}%)`;
+  }
+
+  function updateShipsProgress() {
+    if (!shipsLoaded) {
+      setProgressCounts(0, 0);
+      return;
+    }
+    const total = shipsList.length;
+    const owned = shipsList.reduce((count, ship) => count + (getShipEntry(ship.idx).owned ? 1 : 0), 0);
+    setProgressCounts(owned, total);
+  }
+
   function renderShipsCatalog(query = "") {
     if (!characterList) return;
     characterList.innerHTML = "";
+    updateShipsProgress();
     if (!shipsLoaded) {
       const loading = document.createElement("div");
       loading.className = "empty-state";
@@ -2001,7 +2208,7 @@
     const q = normalizeForSearch(query || (searchInput?.value || ""));
     const mode = catalogOwnershipMode;
     const visible = shipsList.filter((s) => {
-      if (q && !normalizeForSearch(s.name).includes(q)) return false;
+      if (q && !normalizeForSearch(`${s.id || ""} ${s.name}`).includes(q)) return false;
       const ent = getShipEntry(s.idx);
       if (mode === "owned") return ent.owned;
       if (mode === "missing") return !ent.owned;
@@ -2024,14 +2231,15 @@
       item.className = "ap-item ship-tile";
       if (ent.owned) item.classList.add("ship-owned");
       if (ent.owned && ent.level === SHIP_LEVEL_MAX) item.classList.add("is-max");
-      item.title = `${s.name} — Lv ${ent.level}/${SHIP_LEVEL_MAX}`;
+      item.title = `#${s.id || s.idx} ${s.name} — Lv ${ent.level}/${SHIP_LEVEL_MAX}`;
 
       const img = document.createElement("img");
       img.alt = s.name;
       img.loading = "lazy";
       img.decoding = "async";
       img.fetchPriority = "low";
-      setImgWithFallback(img, s.thumb ? shipThumbUrl(s.thumb) : PLACEHOLDER_IMG, PLACEHOLDER_IMG);
+      const thumbSrc = shipThumbUrl(s.icon || s.thumb);
+      setShipImgWithFallback(img, thumbSrc, PLACEHOLDER_IMG);
       item.appendChild(img);
 
       if (ent.owned) {
@@ -2041,8 +2249,17 @@
         item.appendChild(lvl);
       }
 
+      attachArtworkPreviewInteractions(item, {
+        ...s,
+        icon: thumbSrc,
+        artwork: s.artwork || shipArtworkUrl(s)
+      });
       item.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (item.dataset.previewOpened === "1") {
+          item.dataset.previewOpened = "0";
+          return;
+        }
         const cur = getShipEntry(s.idx);
         if (!cur.owned) {
           setShipEntry(s.idx, { owned: true, level: Math.max(cur.level, SHIP_LEVEL_MIN) });
@@ -2054,6 +2271,7 @@
       const openEdit = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (item.dataset.previewOpened === "1") return;
         openShipEditPopup(s);
       };
       item.addEventListener("contextmenu", openEdit);
@@ -2077,7 +2295,17 @@
           <img class="ship-edit-thumb" alt="" />
           <div class="ship-edit-info">
             <div class="ship-edit-name"></div>
+            <div class="ship-edit-meta"></div>
+          </div>
+        </div>
+        <div class="ship-edit-details">
+          <div class="ship-edit-section">
+            <div class="ship-edit-section-title">Effect</div>
             <div class="ship-edit-desc"></div>
+          </div>
+          <div class="ship-edit-section ship-edit-special-block" hidden>
+            <div class="ship-edit-section-title">Special</div>
+            <div class="ship-edit-special"></div>
           </div>
         </div>
         <div class="ship-edit-row">
@@ -2095,9 +2323,25 @@
       </div>`;
     document.body.appendChild(overlay);
     const dialog = overlay.querySelector(".ship-edit-dialog");
-    overlay.querySelector(".ship-edit-thumb").src = shipThumbUrl(ship.thumb);
+    setShipImgWithFallback(overlay.querySelector(".ship-edit-thumb"), shipThumbUrl(ship.icon || ship.thumb), PLACEHOLDER_IMG);
     overlay.querySelector(".ship-edit-name").textContent = ship.name;
-    overlay.querySelector(".ship-edit-desc").textContent = ship.description || "";
+    const meta = overlay.querySelector(".ship-edit-meta");
+    const chipValues = [`#${ship.id || ship.idx}`];
+    if (ship.colaCount != null) chipValues.push(`Cola ${Number(ship.colaCount).toLocaleString("fr-FR")}`);
+    if (ship.superColaCount != null && Number(ship.superColaCount) > 0) chipValues.push(`Super cola ${Number(ship.superColaCount).toLocaleString("fr-FR")}`);
+    if (ship.hasSpecial && ship.hasSpecial !== "no") chipValues.push(ship.hasSpecial === "afterMRank5" ? "Special M.Rank 5" : "Special");
+    chipValues.forEach((label) => {
+      const chip = document.createElement("span");
+      chip.className = "ship-edit-chip";
+      chip.textContent = label;
+      meta.appendChild(chip);
+    });
+    overlay.querySelector(".ship-edit-desc").textContent = ship.effect || ship.description || "";
+    const specialBlock = overlay.querySelector(".ship-edit-special-block");
+    if (ship.special) {
+      specialBlock.hidden = false;
+      overlay.querySelector(".ship-edit-special").textContent = ship.special;
+    }
     const slider = overlay.querySelector(".ship-edit-slider");
     const lvlVal = overlay.querySelector(".ship-edit-lvl-val");
     slider.addEventListener("input", () => { lvlVal.textContent = `${slider.value}/${SHIP_LEVEL_MAX}`; });
@@ -2213,12 +2457,7 @@
           if (isSelected(uid)) ownedSet.add(uid);
         });
       });
-      const total = totalSet.size;
-      const owned = ownedSet.size;
-      const ratio = total > 0 ? (owned / total) : 0;
-      const pct = Math.max(0, Math.min(100, ratio * 100));
-      progressFill.style.width = `${pct}%`;
-      progressLabel.textContent = `${owned}/${total} (${pct.toFixed(1)}%)`;
+      setProgressCounts(ownedSet.size, totalSet.size);
     };
 
     const dedupedPool = getCatalogPoolForPage(page);
@@ -2615,7 +2854,7 @@
     }
     if (next === "ships") {
       loadShips().then(() => {
-        if (activeCatalogPage === "ships") renderShipsCatalog();
+        if (activeCatalogPage === "ships") renderShipsCatalog(searchInput?.value || "");
       });
     }
     renderCharacters(searchInput?.value || "");

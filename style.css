@@ -2625,12 +2625,23 @@ body.is-ships-mode #tab-archive { display: none; }
 .ships-grid .ship-tile.is-max .ship-tile-level { background: #f0c75e; color: #1a1a1a; }
 
 .ship-edit-overlay { z-index: 10000; }
-.ship-edit-dialog { max-width: 420px; width: calc(100% - 32px); }
+.ship-edit-dialog { max-width: 520px; width: calc(100% - 32px); max-height: calc(100dvh - 32px); overflow: auto; }
 .ship-edit-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
 .ship-edit-thumb { width: 56px; height: 56px; object-fit: contain; flex-shrink: 0; }
 .ship-edit-info { min-width: 0; flex: 1; }
 .ship-edit-name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
-.ship-edit-desc { font-size: 12px; opacity: 0.75; line-height: 1.35; }
+.ship-edit-meta { display: flex; gap: 5px; flex-wrap: wrap; }
+.ship-edit-chip {
+  display: inline-flex; align-items: center;
+  min-height: 20px; padding: 2px 6px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; line-height: 1.2;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  color: inherit;
+}
+.ship-edit-details { display: grid; gap: 8px; margin: 10px 0 4px; }
+.ship-edit-section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; opacity: 0.62; margin-bottom: 3px; }
+.ship-edit-desc,
+.ship-edit-special { font-size: 12px; opacity: 0.82; line-height: 1.4; }
 .ship-edit-row { display: flex; justify-content: space-between; align-items: center; margin: 12px 0 4px; font-size: 13px; }
 .ship-edit-lvl-val { font-variant-numeric: tabular-nums; font-weight: 600; }
 .ship-edit-slider { width: 100%; }

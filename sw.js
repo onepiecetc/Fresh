@@ -10,11 +10,17 @@ function isOptcImageRequest(request) {
   if (request.method !== "GET") return false;
   const url = new URL(request.url);
   if (!IMAGE_HOSTS.has(url.hostname)) return false;
-  if (!url.pathname.includes("2Shankz/optc-db.github.io")) return false;
-  return (
-    url.pathname.includes("/api/images/full/transparent/")
-    || url.pathname.includes("/api/images/thumbnail/")
-  );
+  const isUnitImage = url.pathname.includes("2Shankz/optc-db.github.io")
+    && (
+      url.pathname.includes("/api/images/full/transparent/")
+      || url.pathname.includes("/api/images/thumbnail/")
+    );
+  const isShipIcon = url.pathname.includes("blzn50/optc-ships")
+    && (
+      url.pathname.includes("/public/icon/")
+      || url.pathname.includes("/public/full/")
+    );
+  return isUnitImage || isShipIcon;
 }
 
 async function trimImageCache(cache) {
