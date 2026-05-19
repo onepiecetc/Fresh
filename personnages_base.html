@@ -42,29 +42,6 @@
           </button>
         </div>
       </div>
-      <!-- Type filter -->
-      <div class="type-filter-wrapper">
-        <button id="type-filter-toggle" class="filter-btn" aria-haspopup="true" aria-expanded="false" aria-controls="type-filter-menu" title="Filter by type">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <span id="type-filter-badge" class="type-filter-badge" hidden>0</span>
-        </button>
-        <div id="type-filter-menu" class="sort-menu type-filter-menu" hidden>
-          <div class="type-filter-grid">
-            <button class="type-filter-item" type="button" data-type="str" aria-pressed="false" title="STR"><img src="assets/affinity/type-str.png" alt="STR"/></button>
-            <button class="type-filter-item" type="button" data-type="dex" aria-pressed="false" title="DEX"><img src="assets/affinity/type-dex.png" alt="DEX"/></button>
-            <button class="type-filter-item" type="button" data-type="qck" aria-pressed="false" title="QCK"><img src="assets/affinity/type-qck.png" alt="QCK"/></button>
-            <button class="type-filter-item" type="button" data-type="psy" aria-pressed="false" title="PSY"><img src="assets/affinity/type-psy.png" alt="PSY"/></button>
-            <button class="type-filter-item" type="button" data-type="int" aria-pressed="false" title="INT"><img src="assets/affinity/type-int.png" alt="INT"/></button>
-            <button class="type-filter-item" type="button" data-type="dual" aria-pressed="false" title="DUAL"><img src="assets/affinity/type-dual.png" alt="DUAL"/></button>
-            <button class="type-filter-item" type="button" data-type="vs" aria-pressed="false" title="VS"><img src="assets/affinity/type-vs.png" alt="VS"/></button>
-          </div>
-          <button id="type-filter-clear" class="sort-item type-filter-clear" type="button">
-            <span class="sort-label">Clear all</span>
-          </button>
-        </div>
-      </div>
       <button
         id="tab-archive"
         class="filter-btn catalog-archive-btn"
@@ -207,6 +184,93 @@
       <div class="confirm-actions">
         <button id="settings-reset-cancel" class="confirm-btn">Cancel</button>
         <button id="settings-reset-apply" class="confirm-btn is-danger" disabled>Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="filters-panel" class="fp-overlay" hidden>
+    <div class="fp-dialog filters-dialog" role="dialog" aria-modal="true" aria-labelledby="filters-title">
+      <div class="fp-header">
+        <h3 id="filters-title">Filters</h3>
+        <button class="fp-close" id="filters-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="fp-content filters-content">
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>Category</h4>
+            <button id="category-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="category-filter-options" class="category-filter-grid" role="group" aria-label="Category filter">
+            <button class="category-filter-item" type="button" data-category="sugo" aria-pressed="false" title="Sugo">
+              <img src="assets/ui/sugo_tab_icon.png" alt="" aria-hidden="true" />
+              <span>Sugo</span>
+            </button>
+            <button class="category-filter-item" type="button" data-category="rr" aria-pressed="false" title="Rare Recruit">
+              <img src="assets/ui/rr_tab_icon.png" alt="" aria-hidden="true" />
+              <span>RR</span>
+            </button>
+            <button class="category-filter-item" type="button" data-category="f2p" aria-pressed="false" title="F2P">
+              <img src="assets/ui/f2p_tab_icon.png" alt="" aria-hidden="true" />
+              <span>F2P</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>Type</h4>
+            <button id="type-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="type-filter-options" class="type-filter-grid" role="group" aria-label="Type filter">
+            <button class="type-filter-item" type="button" data-type="str" aria-pressed="false" title="STR"><img src="assets/affinity/type-str.png" alt="STR"/></button>
+            <button class="type-filter-item" type="button" data-type="dex" aria-pressed="false" title="DEX"><img src="assets/affinity/type-dex.png" alt="DEX"/></button>
+            <button class="type-filter-item" type="button" data-type="qck" aria-pressed="false" title="QCK"><img src="assets/affinity/type-qck.png" alt="QCK"/></button>
+            <button class="type-filter-item" type="button" data-type="psy" aria-pressed="false" title="PSY"><img src="assets/affinity/type-psy.png" alt="PSY"/></button>
+            <button class="type-filter-item" type="button" data-type="int" aria-pressed="false" title="INT"><img src="assets/affinity/type-int.png" alt="INT"/></button>
+            <button class="type-filter-item" type="button" data-type="dual" aria-pressed="false" title="DUAL"><img src="assets/affinity/type-dual.png" alt="DUAL"/></button>
+            <button class="type-filter-item" type="button" data-type="vs" aria-pressed="false" title="VS"><img src="assets/affinity/type-vs.png" alt="VS"/></button>
+          </div>
+        </section>
+
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>Class</h4>
+            <button id="class-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="class-filter-options" class="class-filter-grid" role="group" aria-label="Class filter">
+            <button class="class-filter-item" type="button" data-class="fighter" aria-pressed="false" title="Fighter"><img src="assets/affinity/class-fighter.png" alt="Fighter"/></button>
+            <button class="class-filter-item" type="button" data-class="slasher" aria-pressed="false" title="Slasher"><img src="assets/affinity/class-slasher.png" alt="Slasher"/></button>
+            <button class="class-filter-item" type="button" data-class="striker" aria-pressed="false" title="Striker"><img src="assets/affinity/class-striker.png" alt="Striker"/></button>
+            <button class="class-filter-item" type="button" data-class="shooter" aria-pressed="false" title="Shooter"><img src="assets/affinity/class-shooter.png" alt="Shooter"/></button>
+            <button class="class-filter-item" type="button" data-class="cerebral" aria-pressed="false" title="Cerebral"><img src="assets/affinity/class-cerebral.png" alt="Cerebral"/></button>
+            <button class="class-filter-item" type="button" data-class="powerhouse" aria-pressed="false" title="Powerhouse"><img src="assets/affinity/class-powerhouse.png" alt="Powerhouse"/></button>
+            <button class="class-filter-item" type="button" data-class="driven" aria-pressed="false" title="Driven"><img src="assets/affinity/class-driven.png" alt="Driven"/></button>
+            <button class="class-filter-item" type="button" data-class="free spirit" aria-pressed="false" title="Free Spirit"><img src="assets/affinity/class-free spirit.png" alt="Free Spirit"/></button>
+          </div>
+        </section>
+
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>Rarity</h4>
+            <button id="rarity-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="rarity-filter-options" class="rarity-filter-grid" role="group" aria-label="Rarity filter">
+            <button class="rarity-filter-item" type="button" data-rarity="1" aria-pressed="false" title="1 star">1★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="2" aria-pressed="false" title="2 stars">2★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="3" aria-pressed="false" title="3 stars">3★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="4" aria-pressed="false" title="4 stars">4★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="5" aria-pressed="false" title="5 stars">5★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="6" aria-pressed="false" title="6 stars">6★</button>
+            <button class="rarity-filter-item" type="button" data-rarity="6+" aria-pressed="false" title="6+ stars">6+★</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="fp-footer">
+        <button id="filters-clear-all" class="fp-btn fp-btn-ghost" type="button">Clear filters</button>
+        <div class="fp-spacer"></div>
+        <button id="filters-close-btn" class="fp-btn fp-btn-primary" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -371,6 +435,14 @@
       <div class="bottom-slot bottom-left"></div>
       <div class="bottom-slot bottom-center">
         <div class="bottom-actions">
+          <div class="filters-wrapper">
+            <button id="type-filter-toggle" class="filter-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="filters-panel" title="Filters" aria-label="Filters">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span id="type-filter-badge" class="type-filter-badge" hidden>0</span>
+            </button>
+          </div>
           <button id="selection-toggle" class="filter-btn" title="Edit" aria-pressed="false" aria-label="Edit characters">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" fill="currentColor"/>
@@ -412,6 +484,3 @@
   <script src="main_base.js"></script>
 </body>
 </html>
-
-
-

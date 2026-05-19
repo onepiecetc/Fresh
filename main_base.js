@@ -264,26 +264,88 @@
   // ===== Type filter (multi-select) =====
   const TYPE_FILTER_KEY = "boxTypeFilter";
   const VALID_TYPE_FILTERS = ["str", "dex", "qck", "psy", "int", "dual", "vs"];
-  function readTypeFilter() {
+  const CATEGORY_FILTER_KEY = "boxCategoryFilter";
+  const VALID_CATEGORY_FILTERS = ["sugo", "rr", "f2p"];
+  const CLASS_FILTER_KEY = "boxClassFilter";
+  const VALID_CLASS_FILTERS = ["fighter", "slasher", "striker", "shooter", "cerebral", "powerhouse", "driven", "free spirit"];
+  const RARITY_FILTER_KEY = "boxRarityFilter";
+  const VALID_RARITY_FILTERS = ["1", "2", "3", "4", "5", "6", "6+"];
+  function readFilterSet(storageKey, validValues, normalizeValue = (v) => String(v || "").toLowerCase()) {
     try {
-      const raw = localStorage.getItem(TYPE_FILTER_KEY);
+      const raw = localStorage.getItem(storageKey);
       const parsed = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.filter((t) => VALID_TYPE_FILTERS.includes(String(t).toLowerCase())));
+      return new Set(parsed.map(normalizeValue).filter((v) => validValues.includes(v)));
     } catch { return new Set(); }
   }
+  function readTypeFilter() {
+    return readFilterSet(TYPE_FILTER_KEY, VALID_TYPE_FILTERS);
+  }
+  function readCategoryFilter() {
+    return readFilterSet(CATEGORY_FILTER_KEY, VALID_CATEGORY_FILTERS);
+  }
+  function normalizeClassKey(value) {
+    return String(value || "").toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function readClassFilter() {
+    return readFilterSet(CLASS_FILTER_KEY, VALID_CLASS_FILTERS, normalizeClassKey);
+  }
+  function normalizeRarityKey(value) {
+    const raw = String(value || "").replace("★", "").trim();
+    if (raw === "6+") return "6+";
+    return VALID_RARITY_FILTERS.includes(raw) ? raw : "";
+  }
+  function readRarityFilter() {
+    return readFilterSet(RARITY_FILTER_KEY, VALID_RARITY_FILTERS, normalizeRarityKey);
+  }
   let selectedTypeFilters = readTypeFilter();
+  let selectedCategoryFilters = readCategoryFilter();
+  let selectedClassFilters = readClassFilter();
+  let selectedRarityFilters = readRarityFilter();
   function persistTypeFilter() {
     localStorage.setItem(TYPE_FILTER_KEY, JSON.stringify(Array.from(selectedTypeFilters)));
+  }
+  function persistCategoryFilter() {
+    localStorage.setItem(CATEGORY_FILTER_KEY, JSON.stringify(Array.from(selectedCategoryFilters)));
+  }
+  function persistClassFilter() {
+    localStorage.setItem(CLASS_FILTER_KEY, JSON.stringify(Array.from(selectedClassFilters)));
+  }
+  function persistRarityFilter() {
+    localStorage.setItem(RARITY_FILTER_KEY, JSON.stringify(Array.from(selectedRarityFilters)));
   }
   function getCharTypeKey(char) {
     if (isVsCharacterForTypeSort(char)) return "vs";
     if (isDualCharacterForTypeSort(char)) return "dual";
     return String(char?.type || "").toLowerCase();
   }
+  function getCharClassKeys(char) {
+    const raw = char?.class;
+    const values = Array.isArray(raw) ? raw : [raw];
+    return values.map(normalizeClassKey).filter((key) => VALID_CLASS_FILTERS.includes(key));
+  }
+  function getCharRarityKey(char) {
+    const raw = String(char?.rarity || "").replace("★", "").trim();
+    if (char?.isSixPlus || raw === "6+") return "6+";
+    return VALID_RARITY_FILTERS.includes(raw) ? raw : "";
+  }
   function passesTypeFilter(char) {
     if (!selectedTypeFilters.size) return true;
     return selectedTypeFilters.has(getCharTypeKey(char));
+  }
+  function passesClassFilter(char) {
+    if (!selectedClassFilters.size) return true;
+    return getCharClassKeys(char).some((key) => selectedClassFilters.has(key));
+  }
+  function passesRarityFilter(char) {
+    if (!selectedRarityFilters.size) return true;
+    return selectedRarityFilters.has(getCharRarityKey(char));
+  }
+  function hasActiveCharacterFilters() {
+    return selectedTypeFilters.size || selectedClassFilters.size || selectedRarityFilters.size;
+  }
+  function passesCharacterFilters(char) {
+    return passesTypeFilter(char) && passesClassFilter(char) && passesRarityFilter(char);
   }
 
   function normalizeSortKey(value) {
@@ -851,6 +913,11 @@
 
   const sortToggle = document.getElementById("sort-toggle");
   const sortMenu = document.getElementById("sort-menu");
+  const filtersToggle = document.getElementById("type-filter-toggle");
+  const filtersPanel = document.getElementById("filters-panel");
+  const filtersClose = document.getElementById("filters-close");
+  const filtersCloseBtn = document.getElementById("filters-close-btn");
+  const filtersClearAll = document.getElementById("filters-clear-all");
 
   const islandToggle = document.getElementById("collector-island-toggle");
   const islandPanel = document.getElementById("island-panel");
@@ -2444,6 +2511,30 @@
         : adjustedF2pPool;
       return dedupeByFamily(poolForPage, safePage);
     };
+    const getCategoryFilterLookup = () => {
+      const lookup = new Map();
+      selectedCategoryFilters.forEach((category) => {
+        const uidSet = new Set();
+        const componentSet = new Set();
+        getCatalogPoolForPage(category).forEach((c) => {
+          const uid = String(c?.__uid || c?.id || "");
+          if (uid) uidSet.add(uid);
+          const comp = getComponentKeyForChar(c);
+          if (comp) componentSet.add(comp);
+        });
+        lookup.set(category, { uidSet, componentSet });
+      });
+      return lookup;
+    };
+    const passesCategoryFilter = (char, lookup) => {
+      if (!selectedCategoryFilters.size) return true;
+      const uid = String(char?.__uid || char?.id || "");
+      const comp = getComponentKeyForChar(char);
+      return Array.from(selectedCategoryFilters).some((category) => {
+        const entry = lookup.get(category);
+        return !!entry && ((uid && entry.uidSet.has(uid)) || (comp && entry.componentSet.has(comp)));
+      });
+    };
 
     const updateGlobalProgress = () => {
       if (!progressFill || !progressLabel) return;
@@ -2473,8 +2564,9 @@
           return familyMatch || nameMatch || idMatch;
         })
       : dedupedPool.slice();
-    if (selectedTypeFilters.size) {
-      filtered = filtered.filter(passesTypeFilter);
+    if (hasActiveCharacterFilters() || selectedCategoryFilters.size) {
+      const categoryLookup = selectedCategoryFilters.size ? getCategoryFilterLookup() : null;
+      filtered = filtered.filter((c) => passesCharacterFilters(c) && passesCategoryFilter(c, categoryLookup));
     }
 
     const sortBy = getCurrentSortKey();
@@ -2863,6 +2955,7 @@
   catalogTabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       closeEditPanel();
+      closeFiltersPanel();
       deactivateSelectionMode();
       const target = btn.dataset.page || "sugo";
       if (target === "archive" && activeCatalogPage === "archive") {
@@ -2884,6 +2977,7 @@
   if (shipsToggleBtn) {
     shipsToggleBtn.addEventListener("click", () => {
       closeEditPanel();
+      closeFiltersPanel();
       deactivateSelectionMode();
       if (activeCatalogPage === "ships") {
         const prev = localStorage.getItem("catalogPagePrev");
@@ -3161,6 +3255,7 @@
   syncEditActionSummary();
   syncEditModeStatus();
   selectionToggleBtn?.addEventListener("click", () => {
+    closeFiltersPanel();
     openEditPanel();
   });
   editLevelSlider?.addEventListener("input", () => {
@@ -3278,10 +3373,23 @@
     panel.hidden = true;
     toggleBtn?.setAttribute("aria-expanded", "false");
   };
+  function openFiltersPanel() {
+    refreshFiltersUI();
+    closeEditPanel();
+    deactivateSelectionMode();
+    closeSortMenu();
+    closePanel(settingsPanel, settingsToggle);
+    closeIslandPanel();
+    openPanel(filtersPanel, filtersToggle);
+  }
+  function closeFiltersPanel() {
+    closePanel(filtersPanel, filtersToggle);
+  }
 
   // Settings panel
   settingsToggle?.addEventListener("click", () => {
     closeEditPanel();
+    closeFiltersPanel();
     deactivateSelectionMode();
     openPanel(settingsPanel, settingsToggle);
   });
@@ -3666,6 +3774,7 @@
   };
   sortToggle?.addEventListener("click", () => {
     closeEditPanel();
+    closeFiltersPanel();
     deactivateSelectionMode();
     if (sortToggle.getAttribute("aria-expanded") === "true") closeSortMenu();
     else openSortMenu();
@@ -3693,46 +3802,69 @@
     closeSortMenu();
   });
 
-  // ===== Type filter dropdown =====
-  const typeFilterToggle = document.getElementById("type-filter-toggle");
-  const typeFilterMenu = document.getElementById("type-filter-menu");
+  // ===== Filters panel =====
+  const categoryFilterOptions = document.getElementById("category-filter-options");
+  const categoryFilterClear = document.getElementById("category-filter-clear");
+  const typeFilterOptions = document.getElementById("type-filter-options");
   const typeFilterBadge = document.getElementById("type-filter-badge");
   const typeFilterClear = document.getElementById("type-filter-clear");
-  function closeTypeFilterMenu() {
-    if (!typeFilterMenu || !typeFilterToggle) return;
-    typeFilterMenu.hidden = true;
-    typeFilterToggle.setAttribute("aria-expanded", "false");
+  const classFilterOptions = document.getElementById("class-filter-options");
+  const classFilterClear = document.getElementById("class-filter-clear");
+  const rarityFilterOptions = document.getElementById("rarity-filter-options");
+  const rarityFilterClear = document.getElementById("rarity-filter-clear");
+  function getActiveFilterCount() {
+    return selectedCategoryFilters.size + selectedTypeFilters.size + selectedClassFilters.size + selectedRarityFilters.size;
   }
-  function openTypeFilterMenu() {
-    if (!typeFilterMenu || !typeFilterToggle) return;
-    typeFilterMenu.hidden = false;
-    typeFilterToggle.setAttribute("aria-expanded", "true");
-  }
-  function refreshTypeFilterUI() {
-    if (!typeFilterMenu) return;
-    typeFilterMenu.querySelectorAll(".type-filter-item").forEach((btn) => {
+  function refreshFiltersUI() {
+    categoryFilterOptions?.querySelectorAll(".category-filter-item").forEach((btn) => {
+      const category = String(btn.dataset.category || "").toLowerCase();
+      btn.setAttribute("aria-pressed", selectedCategoryFilters.has(category) ? "true" : "false");
+    });
+    typeFilterOptions?.querySelectorAll(".type-filter-item").forEach((btn) => {
       const t = String(btn.dataset.type || "").toLowerCase();
       btn.setAttribute("aria-pressed", selectedTypeFilters.has(t) ? "true" : "false");
     });
+    classFilterOptions?.querySelectorAll(".class-filter-item").forEach((btn) => {
+      const key = normalizeClassKey(btn.dataset.class || "");
+      btn.setAttribute("aria-pressed", selectedClassFilters.has(key) ? "true" : "false");
+    });
+    rarityFilterOptions?.querySelectorAll(".rarity-filter-item").forEach((btn) => {
+      const key = normalizeRarityKey(btn.dataset.rarity || "");
+      btn.setAttribute("aria-pressed", selectedRarityFilters.has(key) ? "true" : "false");
+    });
     if (typeFilterBadge) {
-      const n = selectedTypeFilters.size;
+      const n = getActiveFilterCount();
       typeFilterBadge.hidden = n === 0;
       typeFilterBadge.textContent = String(n);
     }
+    if (categoryFilterClear) categoryFilterClear.disabled = selectedCategoryFilters.size === 0;
+    if (typeFilterClear) typeFilterClear.disabled = selectedTypeFilters.size === 0;
+    if (classFilterClear) classFilterClear.disabled = selectedClassFilters.size === 0;
+    if (rarityFilterClear) rarityFilterClear.disabled = selectedRarityFilters.size === 0;
+    if (filtersClearAll) filtersClearAll.disabled = getActiveFilterCount() === 0;
   }
-  refreshTypeFilterUI();
-  typeFilterToggle?.addEventListener("click", () => {
-    closeEditPanel();
-    deactivateSelectionMode();
-    closeSortMenu();
-    if (typeFilterToggle.getAttribute("aria-expanded") === "true") closeTypeFilterMenu();
-    else openTypeFilterMenu();
+  refreshFiltersUI();
+  filtersToggle?.addEventListener("click", () => {
+    if (filtersToggle.getAttribute("aria-expanded") === "true") closeFiltersPanel();
+    else openFiltersPanel();
   });
-  document.addEventListener("click", (e) => {
-    if (!typeFilterMenu || !typeFilterToggle) return;
-    if (!typeFilterMenu.contains(e.target) && !typeFilterToggle.contains(e.target)) closeTypeFilterMenu();
+  filtersClose?.addEventListener("click", closeFiltersPanel);
+  filtersCloseBtn?.addEventListener("click", closeFiltersPanel);
+  filtersPanel?.addEventListener("click", (e) => {
+    if (!e.target.closest(".fp-dialog")) closeFiltersPanel();
   });
-  typeFilterMenu?.addEventListener("click", (e) => {
+  categoryFilterOptions?.addEventListener("click", (e) => {
+    const item = e.target.closest(".category-filter-item");
+    if (!item) return;
+    const category = String(item.dataset.category || "").toLowerCase();
+    if (!VALID_CATEGORY_FILTERS.includes(category)) return;
+    if (selectedCategoryFilters.has(category)) selectedCategoryFilters.delete(category);
+    else selectedCategoryFilters.add(category);
+    persistCategoryFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  typeFilterOptions?.addEventListener("click", (e) => {
     const item = e.target.closest(".type-filter-item");
     if (!item) return;
     const t = String(item.dataset.type || "").toLowerCase();
@@ -3740,14 +3872,74 @@
     if (selectedTypeFilters.has(t)) selectedTypeFilters.delete(t);
     else selectedTypeFilters.add(t);
     persistTypeFilter();
-    refreshTypeFilterUI();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  classFilterOptions?.addEventListener("click", (e) => {
+    const item = e.target.closest(".class-filter-item");
+    if (!item) return;
+    const key = normalizeClassKey(item.dataset.class || "");
+    if (!VALID_CLASS_FILTERS.includes(key)) return;
+    if (selectedClassFilters.has(key)) selectedClassFilters.delete(key);
+    else selectedClassFilters.add(key);
+    persistClassFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  rarityFilterOptions?.addEventListener("click", (e) => {
+    const item = e.target.closest(".rarity-filter-item");
+    if (!item) return;
+    const key = normalizeRarityKey(item.dataset.rarity || "");
+    if (!VALID_RARITY_FILTERS.includes(key)) return;
+    if (selectedRarityFilters.has(key)) selectedRarityFilters.delete(key);
+    else selectedRarityFilters.add(key);
+    persistRarityFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  categoryFilterClear?.addEventListener("click", () => {
+    if (!selectedCategoryFilters.size) return;
+    selectedCategoryFilters.clear();
+    persistCategoryFilter();
+    refreshFiltersUI();
     renderCharacters(searchInput?.value || "");
   });
   typeFilterClear?.addEventListener("click", () => {
     if (!selectedTypeFilters.size) return;
     selectedTypeFilters.clear();
     persistTypeFilter();
-    refreshTypeFilterUI();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  classFilterClear?.addEventListener("click", () => {
+    if (!selectedClassFilters.size) return;
+    selectedClassFilters.clear();
+    persistClassFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  rarityFilterClear?.addEventListener("click", () => {
+    if (!selectedRarityFilters.size) return;
+    selectedRarityFilters.clear();
+    persistRarityFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  filtersClearAll?.addEventListener("click", () => {
+    const hadCategoryFilters = selectedCategoryFilters.size > 0;
+    const hadTypeFilters = selectedTypeFilters.size > 0;
+    const hadClassFilters = selectedClassFilters.size > 0;
+    const hadRarityFilters = selectedRarityFilters.size > 0;
+    if (!hadCategoryFilters && !hadTypeFilters && !hadClassFilters && !hadRarityFilters) return;
+    selectedCategoryFilters.clear();
+    selectedTypeFilters.clear();
+    selectedClassFilters.clear();
+    selectedRarityFilters.clear();
+    persistCategoryFilter();
+    persistTypeFilter();
+    persistClassFilter();
+    persistRarityFilter();
+    refreshFiltersUI();
     renderCharacters(searchInput?.value || "");
   });
 
@@ -4199,6 +4391,7 @@
 
   islandToggle?.addEventListener("click", () => {
     closeEditPanel();
+    closeFiltersPanel();
     deactivateSelectionMode();
     openIslandPanel();
   });
@@ -4254,6 +4447,10 @@
     }
     if (editPanel && !editPanel.hidden) {
       closeEditPanel({ deactivateMode: true });
+      return;
+    }
+    if (filtersPanel && !filtersPanel.hidden) {
+      closeFiltersPanel();
       return;
     }
     if (settingsPanel && !settingsPanel.hidden) closePanel(settingsPanel, settingsToggle);
