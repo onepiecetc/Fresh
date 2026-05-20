@@ -1,5 +1,5 @@
 const IMAGE_CACHE = "optc-sugo-images-v1";
-const MAX_IMAGE_ENTRIES = 180;
+const MAX_IMAGE_ENTRIES = 420;
 
 const IMAGE_HOSTS = new Set([
   "cdn.jsdelivr.net",

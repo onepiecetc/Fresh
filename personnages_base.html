@@ -66,6 +66,14 @@
     <div id="progress-track">
       <div id="progress-fill"></div>
       <span id="progress-label"></span>
+      <button id="progress-details-toggle" class="progress-details-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="progress-panel" title="Progress details" aria-label="Progress details">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <rect x="6" y="11" width="3" height="6" rx="1" fill="currentColor"/>
+          <rect x="11" y="7" width="3" height="10" rx="1" fill="currentColor"/>
+          <rect x="16" y="4" width="3" height="13" rx="1" fill="currentColor"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -101,6 +109,38 @@
     </div>
     <section id="character-list"></section>
   </main>
+
+  <div id="progress-panel" class="fp-overlay" hidden>
+    <div class="fp-dialog progress-dialog" role="dialog" aria-modal="true" aria-labelledby="progress-title">
+      <div class="fp-header">
+        <h3 id="progress-title">Progress Details</h3>
+        <button class="fp-close" id="progress-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="fp-content progress-content">
+        <div class="progress-detail-summary" aria-label="Global character progress">
+          <div class="progress-detail-card">
+            <span class="progress-detail-label">Owned</span>
+            <span id="progress-detail-owned" class="progress-detail-value">0</span>
+          </div>
+          <div class="progress-detail-card">
+            <span class="progress-detail-label">Missing</span>
+            <span id="progress-detail-missing" class="progress-detail-value">0</span>
+          </div>
+          <div class="progress-detail-card">
+            <span class="progress-detail-label">Rate</span>
+            <span id="progress-detail-rate" class="progress-detail-value">0%</span>
+          </div>
+        </div>
+        <div id="progress-detail-list" class="progress-detail-list"></div>
+      </div>
+
+      <div class="fp-footer">
+        <div class="fp-spacer"></div>
+        <button id="progress-close-btn" class="fp-btn fp-btn-primary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- =========================
        Panneau de paramètres (overlay)
@@ -196,6 +236,21 @@
       </div>
 
       <div class="fp-content filters-content">
+        <div id="filter-stats" class="filter-stats" role="status" aria-live="polite" hidden>
+          <div class="filter-stat">
+            <span class="filter-stat-label">Sugo</span>
+            <span id="filter-stat-sugo" class="filter-stat-value">0</span>
+          </div>
+          <div class="filter-stat">
+            <span class="filter-stat-label">RR</span>
+            <span id="filter-stat-rr" class="filter-stat-value">0</span>
+          </div>
+          <div class="filter-stat">
+            <span class="filter-stat-label">F2P</span>
+            <span id="filter-stat-f2p" class="filter-stat-value">0</span>
+          </div>
+        </div>
+
         <section class="fp-section filter-section">
           <div class="filter-section-head">
             <h4>Category</h4>
@@ -263,6 +318,45 @@
             <button class="rarity-filter-item" type="button" data-rarity="5" aria-pressed="false" title="5 stars">5★</button>
             <button class="rarity-filter-item" type="button" data-rarity="6" aria-pressed="false" title="6 stars">6★</button>
             <button class="rarity-filter-item" type="button" data-rarity="6+" aria-pressed="false" title="6+ stars">6+★</button>
+          </div>
+        </section>
+
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>Level</h4>
+            <button id="level-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="level-filter-options" class="level-filter-grid" role="group" aria-label="Level filter">
+            <button class="level-filter-item" type="button" data-level="105" aria-pressed="false" title="Level 105">LV 105</button>
+            <button class="level-filter-item" type="button" data-level="110" aria-pressed="false" title="Level 110">LV 110</button>
+            <button class="level-filter-item" type="button" data-level="120" aria-pressed="false" title="Level 120">LV 120</button>
+            <button class="level-filter-item" type="button" data-level="130" aria-pressed="false" title="Level 130">LV 130</button>
+            <button class="level-filter-item is-level-max" type="button" data-level="150" aria-pressed="false" title="Level 150">MAX</button>
+          </div>
+        </section>
+
+        <section class="fp-section filter-section">
+          <div class="filter-section-head">
+            <h4>LB / Rainbow</h4>
+            <button id="status-filter-clear" class="fp-btn fp-btn-ghost filter-section-action" type="button">Clear</button>
+          </div>
+          <div id="status-filter-options" class="status-filter-grid" role="group" aria-label="Limit Break and Rainbow filter">
+            <button class="status-filter-item" type="button" data-lb="1" aria-pressed="false" title="Limit Break Max">
+              <img src="assets/modal/limitbreak_max.png" alt="" aria-hidden="true" />
+              <span>LB</span>
+            </button>
+            <button class="status-filter-item" type="button" data-lb="2" aria-pressed="false" title="Limit Break Super Max">
+              <img src="assets/modal/limitbreak_super_max.png" alt="" aria-hidden="true" />
+              <span>LB+</span>
+            </button>
+            <button class="status-filter-item" type="button" data-rainbow="1" aria-pressed="false" title="Rainbow">
+              <span class="status-filter-rainbow status-filter-rainbow-1" aria-hidden="true"></span>
+              <span>RB</span>
+            </button>
+            <button class="status-filter-item" type="button" data-rainbow="2" aria-pressed="false" title="Super Rainbow">
+              <span class="status-filter-rainbow status-filter-rainbow-2" aria-hidden="true"></span>
+              <span>RB+</span>
+            </button>
           </div>
         </section>
       </div>

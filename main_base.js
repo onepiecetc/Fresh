@@ -10,8 +10,8 @@
   const FLAGS_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/flags.js";
   const FAMILIES_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/families.js";
   const DROPS_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/drops.js";
-  const THUMB_PRIMARY = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/glo";
-  const THUMB_FALLBACK = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/jap";
+  const THUMB_PRIMARY = "https://wsrv.nl/?url=https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/thumbnail/glo";
+  const THUMB_FALLBACK = "https://wsrv.nl/?url=https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/thumbnail/jap";
   const ART_BASE = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/full/transparent";
   const ART_BASE_NOREF = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io/api/images/full/transparent";
   const ART_BASE_RAW = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/full/transparent";
@@ -22,8 +22,10 @@
   // ===== Ships =====
   const SHIPS_DATA_URL = "https://raw.githubusercontent.com/blzn50/optc-ships/refs/heads/master/src/data/units.ts";
   const SHIPS_DETAILS_URL = "https://raw.githubusercontent.com/blzn50/optc-ships/refs/heads/master/src/data/details.ts";
-  const SHIPS_THUMB_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/icon";
-  const SHIPS_ART_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/full";
+  const SHIPS_THUMB_BASE = "https://cdn.jsdelivr.net/gh/blzn50/optc-ships@master/public/icon";
+  const SHIPS_THUMB_FALLBACK_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/icon";
+  const SHIPS_ART_BASE = "https://cdn.jsdelivr.net/gh/blzn50/optc-ships@master/public/full";
+  const SHIPS_ART_FALLBACK_BASE = "https://raw.githubusercontent.com/blzn50/optc-ships/master/public/full";
   const SHIPS_DATA_CACHE_KEY = "ships:data:v3";
   const SHIPS_DATA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const SHIPS_STATE_KEY = "ships:state:v2";
@@ -187,10 +189,25 @@
     const filename = shipIconFilename(thumb);
     return filename ? `${SHIPS_THUMB_BASE}/${encodeURIComponent(filename)}` : PLACEHOLDER_IMG;
   }
+  function shipThumbFallbackUrl(thumb) {
+    const filename = shipIconFilename(thumb);
+    return filename ? `${SHIPS_THUMB_FALLBACK_BASE}/${encodeURIComponent(filename)}` : PLACEHOLDER_IMG;
+  }
+  function getShipThumbSources(thumb) {
+    return {
+      primary: shipThumbUrl(thumb),
+      fallback: shipThumbFallbackUrl(thumb)
+    };
+  }
   function shipArtworkUrl(ship) {
     const id = parseInt(ship?.id || ship?.idx, 10) || 0;
     const filename = formatShipArtworkFilename(id);
     return filename ? `${SHIPS_ART_BASE}/${encodeURIComponent(filename)}` : "";
+  }
+  function shipArtworkFallbackUrl(ship) {
+    const id = parseInt(ship?.id || ship?.idx, 10) || 0;
+    const filename = formatShipArtworkFilename(id);
+    return filename ? `${SHIPS_ART_FALLBACK_BASE}/${encodeURIComponent(filename)}` : "";
   }
 
   // State
@@ -270,6 +287,13 @@
   const VALID_CLASS_FILTERS = ["fighter", "slasher", "striker", "shooter", "cerebral", "powerhouse", "driven", "free spirit"];
   const RARITY_FILTER_KEY = "boxRarityFilter";
   const VALID_RARITY_FILTERS = ["1", "2", "3", "4", "5", "6", "6+"];
+  const PROGRESS_EXCLUDED_UIDS = new Set(["5014"]);
+  const LEVEL_FILTER_KEY = "boxLevelFilter";
+  const VALID_LEVEL_FILTERS = ["105", "110", "120", "130", "150"];
+  const LIMIT_BREAK_FILTER_KEY = "boxLimitBreakFilter";
+  const VALID_LIMIT_BREAK_FILTERS = ["1", "2"];
+  const RAINBOW_FILTER_KEY = "boxRainbowFilter";
+  const VALID_RAINBOW_FILTERS = ["1", "2"];
   function readFilterSet(storageKey, validValues, normalizeValue = (v) => String(v || "").toLowerCase()) {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -298,10 +322,32 @@
   function readRarityFilter() {
     return readFilterSet(RARITY_FILTER_KEY, VALID_RARITY_FILTERS, normalizeRarityKey);
   }
+  function normalizeSimpleNumericFilter(value) {
+    return String(value || "").trim();
+  }
+  function readLevelFilter() {
+    try {
+      const raw = localStorage.getItem(LEVEL_FILTER_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return new Set();
+      const levels = parsed.map(normalizeSimpleNumericFilter).filter((v) => VALID_LEVEL_FILTERS.includes(v));
+      const lastLevel = levels[levels.length - 1];
+      return lastLevel ? new Set([lastLevel]) : new Set();
+    } catch { return new Set(); }
+  }
+  function readLimitBreakFilter() {
+    return readFilterSet(LIMIT_BREAK_FILTER_KEY, VALID_LIMIT_BREAK_FILTERS, normalizeSimpleNumericFilter);
+  }
+  function readRainbowFilter() {
+    return readFilterSet(RAINBOW_FILTER_KEY, VALID_RAINBOW_FILTERS, normalizeSimpleNumericFilter);
+  }
   let selectedTypeFilters = readTypeFilter();
   let selectedCategoryFilters = readCategoryFilter();
   let selectedClassFilters = readClassFilter();
   let selectedRarityFilters = readRarityFilter();
+  let selectedLevelFilters = readLevelFilter();
+  let selectedLimitBreakFilters = readLimitBreakFilter();
+  let selectedRainbowFilters = readRainbowFilter();
   function persistTypeFilter() {
     localStorage.setItem(TYPE_FILTER_KEY, JSON.stringify(Array.from(selectedTypeFilters)));
   }
@@ -313,6 +359,22 @@
   }
   function persistRarityFilter() {
     localStorage.setItem(RARITY_FILTER_KEY, JSON.stringify(Array.from(selectedRarityFilters)));
+  }
+  function persistLevelFilter() {
+    localStorage.setItem(LEVEL_FILTER_KEY, JSON.stringify(Array.from(selectedLevelFilters)));
+  }
+  function persistLimitBreakFilter() {
+    localStorage.setItem(LIMIT_BREAK_FILTER_KEY, JSON.stringify(Array.from(selectedLimitBreakFilters)));
+  }
+  function persistRainbowFilter() {
+    localStorage.setItem(RAINBOW_FILTER_KEY, JSON.stringify(Array.from(selectedRainbowFilters)));
+  }
+  function getCharUid(char) {
+    return String(char?.__uid || char?.id || "");
+  }
+  function isExcludedFromProgress(charOrUid) {
+    const uid = typeof charOrUid === "object" ? getCharUid(charOrUid) : String(charOrUid || "");
+    return PROGRESS_EXCLUDED_UIDS.has(uid);
   }
   function getCharTypeKey(char) {
     if (isVsCharacterForTypeSort(char)) return "vs";
@@ -341,12 +403,47 @@
     if (!selectedRarityFilters.size) return true;
     return selectedRarityFilters.has(getCharRarityKey(char));
   }
+  function passesLevelFilter(char) {
+    if (!selectedLevelFilters.size) return true;
+    const uid = getCharUid(char);
+    if (!uid || !isSelected(uid)) return false;
+    const levelValue = getLevelValue(uid);
+    if (selectedLevelFilters.has("105") && levelValue >= 105 && levelValue < 110) return true;
+    if (selectedLevelFilters.has("110") && levelValue >= 110 && levelValue < 120) return true;
+    if (selectedLevelFilters.has("120") && levelValue >= 120 && levelValue < 130) return true;
+    if (selectedLevelFilters.has("130") && levelValue >= 130 && levelValue < 150) return true;
+    if (selectedLevelFilters.has("150") && levelValue >= 150) return true;
+    return false;
+  }
+  function passesLimitBreakFilter(char) {
+    if (!selectedLimitBreakFilters.size) return true;
+    const uid = getCharUid(char);
+    if (!uid || !isSelected(uid)) return false;
+    return selectedLimitBreakFilters.has(String(getLimitBreakBadgeValue(uid)));
+  }
+  function passesRainbowFilter(char) {
+    if (!selectedRainbowFilters.size) return true;
+    const uid = getCharUid(char);
+    if (!uid || !isSelected(uid)) return false;
+    return selectedRainbowFilters.has(String(getRainbowFrameValue(uid)));
+  }
   function hasActiveCharacterFilters() {
-    return selectedTypeFilters.size || selectedClassFilters.size || selectedRarityFilters.size;
+    return selectedTypeFilters.size
+      || selectedClassFilters.size
+      || selectedRarityFilters.size
+      || selectedLevelFilters.size
+      || selectedLimitBreakFilters.size
+      || selectedRainbowFilters.size;
   }
   function passesCharacterFilters(char) {
-    return passesTypeFilter(char) && passesClassFilter(char) && passesRarityFilter(char);
+    return passesTypeFilter(char)
+      && passesClassFilter(char)
+      && passesRarityFilter(char)
+      && passesLevelFilter(char)
+      && passesLimitBreakFilter(char)
+      && passesRainbowFilter(char);
   }
+  let computeFilterStatsForCurrentPools = null;
 
   function normalizeSortKey(value) {
     const raw = String(value || "").toLowerCase();
@@ -670,6 +767,11 @@
   function setImgWithFallback(img, primary, secondary) {
     if (!img) return;
     img.decoding = "async";
+
+    // AJOUT ICI : Force le format webp si on passe par le CDN wsrv.nl
+    if (primary && primary.includes("wsrv.nl") && !primary.includes("&output=")) primary += "&output=webp";
+    if (secondary && secondary.includes("wsrv.nl") && !secondary.includes("&output=")) secondary += "&output=webp";
+
     const token = String(Date.now() + Math.random());
     img.dataset.loadToken = token;
     const applySrc = (src) => {
@@ -800,16 +902,33 @@
       setImgSrcIfChanged(img, PLACEHOLDER_IMG);
     }
 
+    const normalizeWinner = (url) => {
+      loadNormalizedShipIcon(url)
+        .then((normalizedUrl) => {
+          if (img.dataset.loadToken !== token) return;
+          applySrc(normalizedUrl || url);
+        })
+        .catch(() => {});
+    };
+
+    const cached = sources.find((u) => decodedImageSet.has(u));
+    if (cached) {
+      applySrc(cached);
+      normalizeWinner(cached);
+      return;
+    }
+
     let settled = false;
     let remaining = sources.length;
     sources.forEach((url) => {
-      loadNormalizedShipIcon(url)
-        .then((normalizedUrl) => {
+      loadImageDecoded(url)
+        .then(() => {
           if (settled) return;
           settled = true;
           decodedImageSet.add(url);
           failedImageSet.delete(url);
-          applySrc(normalizedUrl || url);
+          applySrc(url);
+          normalizeWinner(url);
         })
         .catch(() => {
           failedImageSet.add(url);
@@ -856,6 +975,14 @@
   const clearSearchBtn = document.getElementById("clear-search");
   const progressFill = document.getElementById("progress-fill");
   const progressLabel = document.getElementById("progress-label");
+  const progressDetailsToggle = document.getElementById("progress-details-toggle");
+  const progressPanel = document.getElementById("progress-panel");
+  const progressClose = document.getElementById("progress-close");
+  const progressCloseBtn = document.getElementById("progress-close-btn");
+  const progressDetailOwned = document.getElementById("progress-detail-owned");
+  const progressDetailMissing = document.getElementById("progress-detail-missing");
+  const progressDetailRate = document.getElementById("progress-detail-rate");
+  const progressDetailList = document.getElementById("progress-detail-list");
   const characterList = document.getElementById("character-list");
   const tabSugo = document.getElementById("tab-sugo");
   const tabRR = document.getElementById("tab-rr");
@@ -864,6 +991,7 @@
   const catalogOwnershipToggle = document.getElementById("catalog-ownership-toggle");
   const catalogOwnershipButtons = Array.from(document.querySelectorAll(".catalog-ownership-btn"));
   const catalogTabs = [tabSugo, tabRR, tabF2P, tabArchive].filter(Boolean);
+  const PROGRESS_CATEGORY_LABELS = { sugo: "Sugo", rr: "Rare Recruit", f2p: "F2P" };
 
   const selectionToggleBtn = document.getElementById("selection-toggle");
   const editPanel = document.getElementById("edit-panel");
@@ -2240,12 +2368,84 @@
     return `${completion}<span class="ap-count-side ap-count-missing" aria-label="${missing} missing">${missing}</span>`;
   }
 
+  function getCompletionPercent(ownedCount, totalCount) {
+    const total = Math.max(0, Math.round(Number(totalCount) || 0));
+    const owned = Math.max(0, Math.min(total, Math.round(Number(ownedCount) || 0)));
+    return total > 0 ? Math.max(0, Math.min(100, (owned / total) * 100)) : 0;
+  }
+
+  let progressDetailsState = {
+    owned: 0,
+    total: 0,
+    categories: VALID_CATEGORY_FILTERS.map((key) => ({
+      key,
+      label: PROGRESS_CATEGORY_LABELS[key] || key,
+      owned: 0,
+      total: 0
+    }))
+  };
+
+  function setProgressDetailsState(nextState) {
+    progressDetailsState = nextState || progressDetailsState;
+    if (progressPanel && !progressPanel.hidden) renderProgressDetailsUI();
+  }
+
+  function renderProgressDetailsUI() {
+    const state = progressDetailsState || { owned: 0, total: 0, categories: [] };
+    const owned = Math.max(0, Math.round(Number(state.owned) || 0));
+    const total = Math.max(0, Math.round(Number(state.total) || 0));
+    const missing = Math.max(0, total - owned);
+    const pct = getCompletionPercent(owned, total);
+    if (progressDetailOwned) progressDetailOwned.textContent = `${owned}/${total}`;
+    if (progressDetailMissing) progressDetailMissing.textContent = String(missing);
+    if (progressDetailRate) progressDetailRate.textContent = `${pct.toFixed(1)}%`;
+    if (!progressDetailList) return;
+
+    progressDetailList.innerHTML = "";
+    (state.categories || []).forEach((entry) => {
+      const rowTotal = Math.max(0, Math.round(Number(entry.total) || 0));
+      const rowOwned = Math.max(0, Math.min(rowTotal, Math.round(Number(entry.owned) || 0)));
+      const rowMissing = Math.max(0, rowTotal - rowOwned);
+      const rowPct = getCompletionPercent(rowOwned, rowTotal);
+
+      const row = document.createElement("div");
+      row.className = "progress-detail-row";
+
+      const head = document.createElement("div");
+      head.className = "progress-detail-row-head";
+      const name = document.createElement("span");
+      name.className = "progress-detail-name";
+      name.textContent = entry.label || entry.key || "Category";
+      const count = document.createElement("span");
+      count.className = "progress-detail-count";
+      count.textContent = `${rowOwned}/${rowTotal}`;
+      head.append(name, count);
+
+      const bar = document.createElement("div");
+      bar.className = "progress-detail-bar";
+      const fill = document.createElement("div");
+      fill.className = "progress-detail-bar-fill";
+      fill.style.width = `${rowPct}%`;
+      bar.appendChild(fill);
+
+      const meta = document.createElement("div");
+      meta.className = "progress-detail-row-meta";
+      const missingText = document.createElement("span");
+      missingText.textContent = `${rowMissing} missing`;
+      const pctText = document.createElement("span");
+      pctText.textContent = `${rowPct.toFixed(1)}%`;
+      meta.append(missingText, pctText);
+
+      row.append(head, bar, meta);
+      progressDetailList.appendChild(row);
+    });
+  }
+
   function setProgressCounts(ownedCount, totalCount) {
     if (!progressFill || !progressLabel) return;
     const total = Math.max(0, Math.round(Number(totalCount) || 0));
     const owned = Math.max(0, Math.min(total, Math.round(Number(ownedCount) || 0)));
-    const ratio = total > 0 ? (owned / total) : 0;
-    const pct = Math.max(0, Math.min(100, ratio * 100));
+    const pct = getCompletionPercent(owned, total);
     progressFill.style.width = `${pct}%`;
     progressLabel.textContent = `${owned}/${total} (${pct.toFixed(1)}%)`;
   }
@@ -2258,6 +2458,24 @@
     const total = shipsList.length;
     const owned = shipsList.reduce((count, ship) => count + (getShipEntry(ship.idx).owned ? 1 : 0), 0);
     setProgressCounts(owned, total);
+  }
+
+  function warmShipThumbs(list, limit = 80) {
+    const ships = Array.isArray(list) ? list.slice(0, limit) : [];
+    if (!ships.length) return;
+    const run = () => {
+      ships.forEach((ship) => {
+        const sources = getShipThumbSources(ship.icon || ship.thumb);
+        loadImageDecoded(sources.primary)
+          .catch(() => loadImageDecoded(sources.fallback))
+          .catch(() => {});
+      });
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(run, { timeout: 700 });
+    } else {
+      setTimeout(run, 120);
+    }
   }
 
   function renderShipsCatalog(query = "") {
@@ -2302,11 +2520,11 @@
 
       const img = document.createElement("img");
       img.alt = s.name;
-      img.loading = "lazy";
+      img.loading = "eager";
       img.decoding = "async";
-      img.fetchPriority = "low";
-      const thumbSrc = shipThumbUrl(s.icon || s.thumb);
-      setShipImgWithFallback(img, thumbSrc, PLACEHOLDER_IMG);
+      img.fetchPriority = "high";
+      const thumbSources = getShipThumbSources(s.icon || s.thumb);
+      setShipImgWithFallback(img, thumbSources.primary, thumbSources.fallback);
       item.appendChild(img);
 
       if (ent.owned) {
@@ -2318,8 +2536,9 @@
 
       attachArtworkPreviewInteractions(item, {
         ...s,
-        icon: thumbSrc,
-        artwork: s.artwork || shipArtworkUrl(s)
+        icon: thumbSources.primary,
+        artwork: s.artwork || shipArtworkUrl(s),
+        artworkSources: [s.artwork || shipArtworkUrl(s), shipArtworkFallbackUrl(s)].filter(Boolean)
       });
       item.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2346,6 +2565,7 @@
       grid.appendChild(item);
     });
     characterList.appendChild(grid);
+    warmShipThumbs(visible);
     requestAnimationFrame(applyDynamicMainPadding);
   }
 
@@ -2390,7 +2610,8 @@
       </div>`;
     document.body.appendChild(overlay);
     const dialog = overlay.querySelector(".ship-edit-dialog");
-    setShipImgWithFallback(overlay.querySelector(".ship-edit-thumb"), shipThumbUrl(ship.icon || ship.thumb), PLACEHOLDER_IMG);
+    const editThumbSources = getShipThumbSources(ship.icon || ship.thumb);
+    setShipImgWithFallback(overlay.querySelector(".ship-edit-thumb"), editThumbSources.primary, editThumbSources.fallback);
     overlay.querySelector(".ship-edit-name").textContent = ship.name;
     const meta = overlay.querySelector(".ship-edit-meta");
     const chipValues = [`#${ship.id || ship.idx}`];
@@ -2535,19 +2756,43 @@
         return !!entry && ((uid && entry.uidSet.has(uid)) || (comp && entry.componentSet.has(comp)));
       });
     };
+    computeFilterStatsForCurrentPools = () => {
+      const stats = {};
+      VALID_CATEGORY_FILTERS.forEach((category) => {
+        const isCategoryIncluded = !selectedCategoryFilters.size || selectedCategoryFilters.has(category);
+        stats[category] = isCategoryIncluded
+          ? getCatalogPoolForPage(category).filter(passesCharacterFilters).length
+          : 0;
+      });
+      return stats;
+    };
+    refreshFilterStatsUI();
 
     const updateGlobalProgress = () => {
       if (!progressFill || !progressLabel) return;
       const totalSet = new Set();
       const ownedSet = new Set();
-      ["sugo", "rr", "f2p"].forEach((p) => {
+      const categories = VALID_CATEGORY_FILTERS.map((p) => {
+        const categoryTotalSet = new Set();
+        const categoryOwnedSet = new Set();
         getCatalogPoolForPage(p).forEach((c) => {
           const uid = String(c?.__uid || c?.id || "");
-          if (!uid) return;
+          if (!uid || isExcludedFromProgress(uid)) return;
+          categoryTotalSet.add(uid);
           totalSet.add(uid);
-          if (isSelected(uid)) ownedSet.add(uid);
+          if (isSelected(uid)) {
+            categoryOwnedSet.add(uid);
+            ownedSet.add(uid);
+          }
         });
+        return {
+          key: p,
+          label: PROGRESS_CATEGORY_LABELS[p] || p,
+          owned: categoryOwnedSet.size,
+          total: categoryTotalSet.size
+        };
       });
+      setProgressDetailsState({ owned: ownedSet.size, total: totalSet.size, categories });
       setProgressCounts(ownedSet.size, totalSet.size);
     };
 
@@ -2665,7 +2910,8 @@
     });
     const ordered = [];
     const baseOrder = PAGE_BANNER_ORDER[page] || [];
-    const forceRrBannerShell = page === "rr" && !q && isAllMode;
+    const hasAnyFilter = hasActiveCharacterFilters() || selectedCategoryFilters.size;
+    const forceRrBannerShell = page === "rr" && !q && isAllMode && !hasAnyFilter;
     if (isAllMode) {
       if (forceRrBannerShell) {
         baseOrder.forEach((b) => { if (!ordered.includes(b)) ordered.push(b); });
@@ -2771,6 +3017,7 @@
         if (isOwned && levelValue > 0) {
           const levelBadge = document.createElement("span");
           levelBadge.className = "ap-item-level";
+          if (isLevelMax150) levelBadge.classList.add("is-level-max-150");
           const levelPrefix = document.createElement("span");
           levelPrefix.className = "ap-item-level-prefix";
           levelPrefix.textContent = "Lv.";
@@ -2956,6 +3203,7 @@
     btn.addEventListener("click", () => {
       closeEditPanel();
       closeFiltersPanel();
+      closeProgressPanel();
       deactivateSelectionMode();
       const target = btn.dataset.page || "sugo";
       if (target === "archive" && activeCatalogPage === "archive") {
@@ -2978,6 +3226,7 @@
     shipsToggleBtn.addEventListener("click", () => {
       closeEditPanel();
       closeFiltersPanel();
+      closeProgressPanel();
       deactivateSelectionMode();
       if (activeCatalogPage === "ships") {
         const prev = localStorage.getItem("catalogPagePrev");
@@ -3256,6 +3505,7 @@
   syncEditModeStatus();
   selectionToggleBtn?.addEventListener("click", () => {
     closeFiltersPanel();
+    closeProgressPanel();
     openEditPanel();
   });
   editLevelSlider?.addEventListener("input", () => {
@@ -3373,9 +3623,24 @@
     panel.hidden = true;
     toggleBtn?.setAttribute("aria-expanded", "false");
   };
+  function openProgressPanel() {
+    if (!progressPanel) return;
+    renderProgressDetailsUI();
+    closeEditPanel();
+    closeFiltersPanel();
+    deactivateSelectionMode();
+    closeSortMenu();
+    closePanel(settingsPanel, settingsToggle);
+    closeIslandPanel();
+    openPanel(progressPanel, progressDetailsToggle);
+  }
+  function closeProgressPanel() {
+    closePanel(progressPanel, progressDetailsToggle);
+  }
   function openFiltersPanel() {
     refreshFiltersUI();
     closeEditPanel();
+    closeProgressPanel();
     deactivateSelectionMode();
     closeSortMenu();
     closePanel(settingsPanel, settingsToggle);
@@ -3390,6 +3655,7 @@
   settingsToggle?.addEventListener("click", () => {
     closeEditPanel();
     closeFiltersPanel();
+    closeProgressPanel();
     deactivateSelectionMode();
     openPanel(settingsPanel, settingsToggle);
   });
@@ -3397,6 +3663,16 @@
   spCloseBtn?.addEventListener("click", () => closePanel(settingsPanel, settingsToggle));
   settingsPanel?.addEventListener("click", (e) => {
     if (!e.target.closest(".fp-dialog")) closePanel(settingsPanel, settingsToggle);
+  });
+
+  progressDetailsToggle?.addEventListener("click", () => {
+    if (progressDetailsToggle.getAttribute("aria-expanded") === "true") closeProgressPanel();
+    else openProgressPanel();
+  });
+  progressClose?.addEventListener("click", closeProgressPanel);
+  progressCloseBtn?.addEventListener("click", closeProgressPanel);
+  progressPanel?.addEventListener("click", (e) => {
+    if (!e.target.closest(".fp-dialog")) closeProgressPanel();
   });
 
   // Theme toggle
@@ -3775,6 +4051,7 @@
   sortToggle?.addEventListener("click", () => {
     closeEditPanel();
     closeFiltersPanel();
+    closeProgressPanel();
     deactivateSelectionMode();
     if (sortToggle.getAttribute("aria-expanded") === "true") closeSortMenu();
     else openSortMenu();
@@ -3803,6 +4080,10 @@
   });
 
   // ===== Filters panel =====
+  const filterStats = document.getElementById("filter-stats");
+  const filterStatSugo = document.getElementById("filter-stat-sugo");
+  const filterStatRR = document.getElementById("filter-stat-rr");
+  const filterStatF2P = document.getElementById("filter-stat-f2p");
   const categoryFilterOptions = document.getElementById("category-filter-options");
   const categoryFilterClear = document.getElementById("category-filter-clear");
   const typeFilterOptions = document.getElementById("type-filter-options");
@@ -3812,8 +4093,28 @@
   const classFilterClear = document.getElementById("class-filter-clear");
   const rarityFilterOptions = document.getElementById("rarity-filter-options");
   const rarityFilterClear = document.getElementById("rarity-filter-clear");
+  const levelFilterOptions = document.getElementById("level-filter-options");
+  const levelFilterClear = document.getElementById("level-filter-clear");
+  const statusFilterOptions = document.getElementById("status-filter-options");
+  const statusFilterClear = document.getElementById("status-filter-clear");
   function getActiveFilterCount() {
-    return selectedCategoryFilters.size + selectedTypeFilters.size + selectedClassFilters.size + selectedRarityFilters.size;
+    return selectedCategoryFilters.size
+      + selectedTypeFilters.size
+      + selectedClassFilters.size
+      + selectedRarityFilters.size
+      + selectedLevelFilters.size
+      + selectedLimitBreakFilters.size
+      + selectedRainbowFilters.size;
+  }
+  function refreshFilterStatsUI() {
+    if (!filterStats) return;
+    const hasFilters = getActiveFilterCount() > 0;
+    filterStats.hidden = !hasFilters;
+    if (!hasFilters) return;
+    const stats = computeFilterStatsForCurrentPools ? computeFilterStatsForCurrentPools() : {};
+    if (filterStatSugo) filterStatSugo.textContent = String(stats.sugo ?? 0);
+    if (filterStatRR) filterStatRR.textContent = String(stats.rr ?? 0);
+    if (filterStatF2P) filterStatF2P.textContent = String(stats.f2p ?? 0);
   }
   function refreshFiltersUI() {
     categoryFilterOptions?.querySelectorAll(".category-filter-item").forEach((btn) => {
@@ -3832,6 +4133,17 @@
       const key = normalizeRarityKey(btn.dataset.rarity || "");
       btn.setAttribute("aria-pressed", selectedRarityFilters.has(key) ? "true" : "false");
     });
+    levelFilterOptions?.querySelectorAll(".level-filter-item").forEach((btn) => {
+      const key = normalizeSimpleNumericFilter(btn.dataset.level || "");
+      btn.setAttribute("aria-pressed", selectedLevelFilters.has(key) ? "true" : "false");
+    });
+    statusFilterOptions?.querySelectorAll(".status-filter-item").forEach((btn) => {
+      const lbKey = normalizeSimpleNumericFilter(btn.dataset.lb || "");
+      const rbKey = normalizeSimpleNumericFilter(btn.dataset.rainbow || "");
+      const isOn = (lbKey && selectedLimitBreakFilters.has(lbKey))
+        || (rbKey && selectedRainbowFilters.has(rbKey));
+      btn.setAttribute("aria-pressed", isOn ? "true" : "false");
+    });
     if (typeFilterBadge) {
       const n = getActiveFilterCount();
       typeFilterBadge.hidden = n === 0;
@@ -3841,7 +4153,10 @@
     if (typeFilterClear) typeFilterClear.disabled = selectedTypeFilters.size === 0;
     if (classFilterClear) classFilterClear.disabled = selectedClassFilters.size === 0;
     if (rarityFilterClear) rarityFilterClear.disabled = selectedRarityFilters.size === 0;
+    if (levelFilterClear) levelFilterClear.disabled = selectedLevelFilters.size === 0;
+    if (statusFilterClear) statusFilterClear.disabled = selectedLimitBreakFilters.size === 0 && selectedRainbowFilters.size === 0;
     if (filtersClearAll) filtersClearAll.disabled = getActiveFilterCount() === 0;
+    refreshFilterStatsUI();
   }
   refreshFiltersUI();
   filtersToggle?.addEventListener("click", () => {
@@ -3897,6 +4212,39 @@
     refreshFiltersUI();
     renderCharacters(searchInput?.value || "");
   });
+  levelFilterOptions?.addEventListener("click", (e) => {
+    const item = e.target.closest(".level-filter-item");
+    if (!item) return;
+    const key = normalizeSimpleNumericFilter(item.dataset.level || "");
+    if (!VALID_LEVEL_FILTERS.includes(key)) return;
+    const wasSelected = selectedLevelFilters.has(key);
+    selectedLevelFilters.clear();
+    if (!wasSelected) selectedLevelFilters.add(key);
+    persistLevelFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  statusFilterOptions?.addEventListener("click", (e) => {
+    const item = e.target.closest(".status-filter-item");
+    if (!item) return;
+    const lbKey = normalizeSimpleNumericFilter(item.dataset.lb || "");
+    const rbKey = normalizeSimpleNumericFilter(item.dataset.rainbow || "");
+    if (lbKey) {
+      if (!VALID_LIMIT_BREAK_FILTERS.includes(lbKey)) return;
+      if (selectedLimitBreakFilters.has(lbKey)) selectedLimitBreakFilters.delete(lbKey);
+      else selectedLimitBreakFilters.add(lbKey);
+      persistLimitBreakFilter();
+    } else if (rbKey) {
+      if (!VALID_RAINBOW_FILTERS.includes(rbKey)) return;
+      if (selectedRainbowFilters.has(rbKey)) selectedRainbowFilters.delete(rbKey);
+      else selectedRainbowFilters.add(rbKey);
+      persistRainbowFilter();
+    } else {
+      return;
+    }
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
   categoryFilterClear?.addEventListener("click", () => {
     if (!selectedCategoryFilters.size) return;
     selectedCategoryFilters.clear();
@@ -3925,20 +4273,51 @@
     refreshFiltersUI();
     renderCharacters(searchInput?.value || "");
   });
+  levelFilterClear?.addEventListener("click", () => {
+    if (!selectedLevelFilters.size) return;
+    selectedLevelFilters.clear();
+    persistLevelFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
+  statusFilterClear?.addEventListener("click", () => {
+    if (!selectedLimitBreakFilters.size && !selectedRainbowFilters.size) return;
+    selectedLimitBreakFilters.clear();
+    selectedRainbowFilters.clear();
+    persistLimitBreakFilter();
+    persistRainbowFilter();
+    refreshFiltersUI();
+    renderCharacters(searchInput?.value || "");
+  });
   filtersClearAll?.addEventListener("click", () => {
     const hadCategoryFilters = selectedCategoryFilters.size > 0;
     const hadTypeFilters = selectedTypeFilters.size > 0;
     const hadClassFilters = selectedClassFilters.size > 0;
     const hadRarityFilters = selectedRarityFilters.size > 0;
-    if (!hadCategoryFilters && !hadTypeFilters && !hadClassFilters && !hadRarityFilters) return;
+    const hadLevelFilters = selectedLevelFilters.size > 0;
+    const hadLimitBreakFilters = selectedLimitBreakFilters.size > 0;
+    const hadRainbowFilters = selectedRainbowFilters.size > 0;
+    if (!hadCategoryFilters
+      && !hadTypeFilters
+      && !hadClassFilters
+      && !hadRarityFilters
+      && !hadLevelFilters
+      && !hadLimitBreakFilters
+      && !hadRainbowFilters) return;
     selectedCategoryFilters.clear();
     selectedTypeFilters.clear();
     selectedClassFilters.clear();
     selectedRarityFilters.clear();
+    selectedLevelFilters.clear();
+    selectedLimitBreakFilters.clear();
+    selectedRainbowFilters.clear();
     persistCategoryFilter();
     persistTypeFilter();
     persistClassFilter();
     persistRarityFilter();
+    persistLevelFilter();
+    persistLimitBreakFilter();
+    persistRainbowFilter();
     refreshFiltersUI();
     renderCharacters(searchInput?.value || "");
   });
@@ -4392,6 +4771,7 @@
   islandToggle?.addEventListener("click", () => {
     closeEditPanel();
     closeFiltersPanel();
+    closeProgressPanel();
     deactivateSelectionMode();
     openIslandPanel();
   });
@@ -4447,6 +4827,10 @@
     }
     if (editPanel && !editPanel.hidden) {
       closeEditPanel({ deactivateMode: true });
+      return;
+    }
+    if (progressPanel && !progressPanel.hidden) {
+      closeProgressPanel();
       return;
     }
     if (filtersPanel && !filtersPanel.hidden) {
