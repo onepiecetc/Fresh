@@ -2,7 +2,6 @@
 (() => {
   const body = document.body;
   const PLACEHOLDER_IMG = "assets/ui/rainbow_box_icon.png";
-  const TRANSPARENT_PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAAAAAA==";
 
   // Data sources (from legacy code)
   const UNITS_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/units.js";
@@ -10,8 +9,8 @@
   const FLAGS_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/flags.js";
   const FAMILIES_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/families.js";
   const DROPS_URL = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/refs/heads/master/common/data/drops.js";
-  const THUMB_PRIMARY = "https://wsrv.nl/?url=https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/thumbnail/glo";
-  const THUMB_FALLBACK = "https://wsrv.nl/?url=https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/thumbnail/jap";
+  const THUMB_PRIMARY = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/glo";
+  const THUMB_FALLBACK = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/thumbnail/jap";
   const ART_BASE = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io@master/api/images/full/transparent";
   const ART_BASE_NOREF = "https://cdn.jsdelivr.net/gh/2Shankz/optc-db.github.io/api/images/full/transparent";
   const ART_BASE_RAW = "https://raw.githubusercontent.com/2Shankz/optc-db.github.io/master/api/images/full/transparent";
@@ -218,15 +217,6 @@
   let openBannerSet = new Set();
   let charactersLoaded = false;
   let charactersLoading = null;
-  const imageCache = new Map();
-  const shipIconNormalizeCache = new Map();
-  const failedImageSet = new Set();
-  const decodedImageSet = new Set();
-  const artworkWarmQueued = new Set();
-  const artworkWarmInFlight = new Set();
-  const artworkWarmQueue = [];
-  const MAX_ARTWORK_WARM_CONCURRENCY = 2;
-  const ENABLE_IDLE_ARTWORK_WARMUP = false;
   const SORT_KEY = "boxSort";
   const CATALOG_REPEAT_KEY = "catalogRepeatSelected";
   const CATALOG_OWNERSHIP_MODES = new Set(["all", "owned", "missing"]);
@@ -683,36 +673,20 @@
   }
 
   // Image helper
-  function loadImageDecoded(url) {
-    if (!url) return Promise.reject(new Error("No URL"));
-    if (imageCache.has(url)) return imageCache.get(url);
-    const p = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.decoding = "async";
-      img.onload = async () => {
-        try { if (img.decode) await img.decode(); } catch {}
-        failedImageSet.delete(url);
-        decodedImageSet.add(url);
-        resolve(url);
-      };
-      img.onerror = (err) => {
-        imageCache.delete(url);
-        failedImageSet.add(url);
-        reject(err);
-      };
-      img.src = url;
-    });
-    imageCache.set(url, p);
-    return p;
-  }
-
-  function orderImageSources(primary, secondary) {
-    const p1 = primary || secondary || PLACEHOLDER_IMG;
-    const p2 = secondary || PLACEHOLDER_IMG;
-    if (failedImageSet.has(p1) && !failedImageSet.has(p2)) {
-      return { primary: p2, secondary: p1 };
-    }
-    return { primary: p1, secondary: p2 };
+  function normalizeImageSources(...groups) {
+    const sources = [];
+    const push = (value) => {
+      if (Array.isArray(value)) {
+        value.forEach(push);
+        return;
+      }
+      const src = String(value || "").trim();
+      if (!src) return;
+      if (!sources.includes(src)) sources.push(src);
+    };
+    groups.forEach(push);
+    if (!sources.includes(PLACEHOLDER_IMG)) sources.push(PLACEHOLDER_IMG);
+    return sources;
   }
 
   function setImgSrcIfChanged(img, src) {
@@ -722,220 +696,42 @@
     img.src = src;
   }
 
-  function pumpArtworkWarmQueue() {
-    while (artworkWarmInFlight.size < MAX_ARTWORK_WARM_CONCURRENCY && artworkWarmQueue.length) {
-      const url = artworkWarmQueue.shift();
-      if (!url || artworkWarmInFlight.has(url)) continue;
-      artworkWarmInFlight.add(url);
-      loadImageDecoded(url)
-        .catch(() => null)
-        .finally(() => {
-          artworkWarmInFlight.delete(url);
-          pumpArtworkWarmQueue();
-        });
-    }
-  }
+  function setImageWithFallback(img, ...sourcesInput) {
+    if (!img) return;
+    img.decoding = "async";
+    const token = String(Date.now() + Math.random());
+    img.dataset.loadToken = token;
+    const sources = normalizeImageSources(...sourcesInput);
+    let index = 0;
 
-  function queueArtworkWarm(url) {
-    if (!url || decodedImageSet.has(url) || artworkWarmQueued.has(url) || artworkWarmInFlight.has(url)) return;
-    artworkWarmQueued.add(url);
-    artworkWarmQueue.push(url);
-    pumpArtworkWarmQueue();
-  }
+    const apply = () => {
+      if (img.dataset.loadToken !== token) return;
+      setImgSrcIfChanged(img, sources[index] || PLACEHOLDER_IMG);
+    };
 
-  function scheduleIdleArtworkWarmup(list, limit = 80) {
-    if (!ENABLE_IDLE_ARTWORK_WARMUP) return;
-    if (!Array.isArray(list) || !list.length) return;
-    const urls = [];
-    list.slice(0, limit).forEach((c) => {
-      if (!c) return;
-      if (Array.isArray(c.artworkSources)) {
-        c.artworkSources.forEach((u) => u && urls.push(u));
-      } else if (c.artwork) {
-        urls.push(c.artwork);
+    img.onerror = () => {
+      if (img.dataset.loadToken !== token) return;
+      index += 1;
+      if (index < sources.length) {
+        apply();
+        return;
       }
-    });
-    if (!urls.length) return;
-    const run = () => urls.forEach((url) => queueArtworkWarm(url));
-    if (typeof window.requestIdleCallback === "function") {
-      window.requestIdleCallback(run, { timeout: 900 });
-      return;
-    }
-    setTimeout(run, 220);
+      img.onerror = null;
+      setImgSrcIfChanged(img, PLACEHOLDER_IMG);
+    };
+    img.onload = () => {
+      if (img.dataset.loadToken !== token) return;
+      img.removeAttribute("data-load-error");
+    };
+    apply();
   }
 
   function setImgWithFallback(img, primary, secondary) {
-    if (!img) return;
-    img.decoding = "async";
-
-    // AJOUT ICI : Force le format webp si on passe par le CDN wsrv.nl
-    if (primary && primary.includes("wsrv.nl") && !primary.includes("&output=")) primary += "&output=webp";
-    if (secondary && secondary.includes("wsrv.nl") && !secondary.includes("&output=")) secondary += "&output=webp";
-
-    const token = String(Date.now() + Math.random());
-    img.dataset.loadToken = token;
-    const applySrc = (src) => {
-      if (img.dataset.loadToken !== token) return;
-      setImgSrcIfChanged(img, src || PLACEHOLDER_IMG);
-    };
-    const ordered = orderImageSources(primary, secondary);
-    const sources = [ordered.primary, ordered.secondary].filter((u, i, a) => u && a.indexOf(u) === i);
-    if (!sources.length) { applySrc(PLACEHOLDER_IMG); return; }
-
-    // Cache hit: instantané
-    const cached = sources.find((u) => decodedImageSet.has(u));
-    if (cached) { applySrc(cached); return; }
-
-    const hasStableSrc = !!img.getAttribute("src") && img.getAttribute("src") !== TRANSPARENT_PX;
-    if (!hasStableSrc) {
-      setImgSrcIfChanged(img, PLACEHOLDER_IMG);
-    }
-
-    // Race en parallèle: la première source décodée gagne.
-    let settled = false;
-    let remaining = sources.length;
-    sources.forEach((url) => {
-      loadImageDecoded(url)
-        .then(() => {
-          if (settled) return;
-          settled = true;
-          applySrc(url);
-        })
-        .catch(() => {
-          remaining -= 1;
-          if (!settled && remaining === 0) applySrc(PLACEHOLDER_IMG);
-        });
-    });
-  }
-
-  function loadNormalizedShipIcon(url) {
-    if (!url || url === PLACEHOLDER_IMG || url.startsWith("data:")) return Promise.resolve(url || PLACEHOLDER_IMG);
-    if (shipIconNormalizeCache.has(url)) return shipIconNormalizeCache.get(url);
-    const p = new Promise((resolve, reject) => {
-      const source = new Image();
-      source.crossOrigin = "anonymous";
-      source.decoding = "async";
-      source.onload = () => {
-        try {
-          const w = source.naturalWidth || source.width;
-          const h = source.naturalHeight || source.height;
-          if (!w || !h) { resolve(url); return; }
-
-          const scan = document.createElement("canvas");
-          scan.width = w;
-          scan.height = h;
-          const scanCtx = scan.getContext("2d", { willReadFrequently: true });
-          if (!scanCtx) { resolve(url); return; }
-          scanCtx.drawImage(source, 0, 0);
-          const pixels = scanCtx.getImageData(0, 0, w, h).data;
-          let minX = w;
-          let minY = h;
-          let maxX = -1;
-          let maxY = -1;
-          for (let y = 0; y < h; y += 1) {
-            for (let x = 0; x < w; x += 1) {
-              const alpha = pixels[((y * w + x) * 4) + 3];
-              if (alpha <= 8) continue;
-              if (x < minX) minX = x;
-              if (y < minY) minY = y;
-              if (x > maxX) maxX = x;
-              if (y > maxY) maxY = y;
-            }
-          }
-          if (maxX < minX || maxY < minY) { resolve(url); return; }
-
-          const canvasSize = 160;
-          const padding = 10;
-          const cropW = maxX - minX + 1;
-          const cropH = maxY - minY + 1;
-          const scale = Math.min((canvasSize - padding * 2) / cropW, (canvasSize - padding * 2) / cropH);
-          const drawW = Math.round(cropW * scale);
-          const drawH = Math.round(cropH * scale);
-          const out = document.createElement("canvas");
-          out.width = canvasSize;
-          out.height = canvasSize;
-          const outCtx = out.getContext("2d");
-          if (!outCtx) { resolve(url); return; }
-          outCtx.imageSmoothingEnabled = true;
-          outCtx.imageSmoothingQuality = "high";
-          outCtx.drawImage(
-            source,
-            minX,
-            minY,
-            cropW,
-            cropH,
-            Math.round((canvasSize - drawW) / 2),
-            Math.round((canvasSize - drawH) / 2),
-            drawW,
-            drawH
-          );
-          resolve(out.toDataURL("image/png"));
-        } catch {
-          resolve(url);
-        }
-      };
-      source.onerror = reject;
-      source.src = url;
-    }).catch((err) => {
-      shipIconNormalizeCache.delete(url);
-      throw err;
-    });
-    shipIconNormalizeCache.set(url, p);
-    return p;
+    setImageWithFallback(img, primary, secondary);
   }
 
   function setShipImgWithFallback(img, primary, secondary) {
-    if (!img) return;
-    img.decoding = "async";
-    const token = String(Date.now() + Math.random());
-    img.dataset.loadToken = token;
-    const applySrc = (src) => {
-      if (img.dataset.loadToken !== token) return;
-      setImgSrcIfChanged(img, src || PLACEHOLDER_IMG);
-    };
-    const ordered = orderImageSources(primary, secondary);
-    const sources = [ordered.primary, ordered.secondary].filter((u, i, a) => u && a.indexOf(u) === i);
-    if (!sources.length) { applySrc(PLACEHOLDER_IMG); return; }
-
-    const hasStableSrc = !!img.getAttribute("src") && img.getAttribute("src") !== TRANSPARENT_PX;
-    if (!hasStableSrc) {
-      setImgSrcIfChanged(img, PLACEHOLDER_IMG);
-    }
-
-    const normalizeWinner = (url) => {
-      loadNormalizedShipIcon(url)
-        .then((normalizedUrl) => {
-          if (img.dataset.loadToken !== token) return;
-          applySrc(normalizedUrl || url);
-        })
-        .catch(() => {});
-    };
-
-    const cached = sources.find((u) => decodedImageSet.has(u));
-    if (cached) {
-      applySrc(cached);
-      normalizeWinner(cached);
-      return;
-    }
-
-    let settled = false;
-    let remaining = sources.length;
-    sources.forEach((url) => {
-      loadImageDecoded(url)
-        .then(() => {
-          if (settled) return;
-          settled = true;
-          decodedImageSet.add(url);
-          failedImageSet.delete(url);
-          applySrc(url);
-          normalizeWinner(url);
-        })
-        .catch(() => {
-          failedImageSet.add(url);
-          remaining -= 1;
-          if (!settled && remaining === 0) applySrc(PLACEHOLDER_IMG);
-        });
-    });
+    setImageWithFallback(img, primary, secondary);
   }
 
   function thumbUrl(id, base = THUMB_PRIMARY) {
@@ -2013,6 +1809,7 @@
     lightboxThumbImg = document.createElement("img");
     lightboxThumbImg.className = "artwork-lightbox-thumb";
     lightboxThumbImg.alt = "";
+    lightboxThumbImg.hidden = true;
     lightboxImg = document.createElement("img");
     lightboxImg.className = "artwork-lightbox-full";
     lightboxImg.alt = "Artwork";
@@ -2021,70 +1818,54 @@
     lightboxEl.addEventListener("click", closeLightbox);
   }
 
-  function loadFirstDecoded(urls) {
-    const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
-    if (!list.length) return Promise.reject(new Error("no source"));
-    // Si une source est deja decodee en cache, la renvoyer instantanement.
-    for (const url of list) {
-      if (decodedImageSet.has(url)) return Promise.resolve(url);
-    }
-    // Sinon, essayer une source apres l'autre pour eviter les chargements multiples inutiles.
-    let chain = Promise.reject(new Error("start"));
-    list.forEach((url) => {
-      chain = chain.catch(() => loadImageDecoded(url));
-    });
-    return chain.catch(() => Promise.reject(new Error("no source")));
-  }
-
-  function prewarmArtwork(urlOrList) {
-    const list = (Array.isArray(urlOrList) ? urlOrList : [urlOrList]).filter(Boolean);
-    const url = list.find((u) => !failedImageSet.has(u)) || list[0];
-    queueArtworkWarm(url);
-  }
-
   function openLightbox(urlOrList, alt, thumbSrc) {
     if (!urlOrList) return;
     ensureLightbox();
     const requestToken = ++lightboxRequestToken;
     const finalAlt = alt || "Artwork";
-    const list = (Array.isArray(urlOrList) ? urlOrList : [urlOrList]).filter(Boolean);
-    const cached = list.find((u) => decodedImageSet.has(u));
-    const fallbackThumb = thumbSrc || lightboxImg.getAttribute("src") || PLACEHOLDER_IMG;
-    lightboxThumbImg.src = cached ? TRANSPARENT_PX : fallbackThumb;
+    const sources = normalizeImageSources(urlOrList);
+    let index = 0;
+
+    lightboxThumbImg.hidden = true;
+    lightboxThumbImg.removeAttribute("src");
     lightboxThumbImg.alt = "";
-    lightboxEl.classList.toggle("has-full-artwork", !!cached);
-    if (cached) {
-      lightboxImg.alt = finalAlt;
-      lightboxImg.src = cached;
-      lightboxEl.classList.remove("is-loading");
-      lightboxEl.classList.remove("hidden");
-      return;
-    }
-    // Ouvre avec l'icone deja disponible, puis remplace seulement quand l'artwork est decode.
-    lightboxImg.alt = "";
-    lightboxImg.src = TRANSPARENT_PX;
+    lightboxImg.alt = finalAlt;
+    lightboxEl.classList.remove("has-full-artwork");
     lightboxEl.classList.add("is-loading");
     lightboxEl.classList.remove("hidden");
-    loadFirstDecoded(list)
-      .then((url) => {
-        if (requestToken !== lightboxRequestToken) return;
-        lightboxImg.src = url;
-        lightboxImg.alt = finalAlt;
-        lightboxEl.classList.add("has-full-artwork");
-        lightboxEl.classList.remove("is-loading");
-      })
-      .catch(() => {
-        if (requestToken !== lightboxRequestToken) return;
-        lightboxImg.src = fallbackThumb;
-        lightboxImg.alt = finalAlt;
-        lightboxEl.classList.add("has-full-artwork");
-        lightboxEl.classList.remove("is-loading");
-      });
+
+    lightboxImg.onerror = () => {
+      if (requestToken !== lightboxRequestToken) return;
+      index += 1;
+      if (index < sources.length) {
+        setImgSrcIfChanged(lightboxImg, sources[index]);
+        return;
+      }
+      lightboxEl.classList.remove("is-loading");
+    };
+    lightboxImg.onload = () => {
+      if (requestToken !== lightboxRequestToken) return;
+      lightboxEl.classList.add("has-full-artwork");
+      lightboxEl.classList.remove("is-loading");
+    };
+    const firstSource = sources[index] || PLACEHOLDER_IMG;
+    setImgSrcIfChanged(lightboxImg, firstSource);
+    if (lightboxImg.getAttribute("src") === firstSource && lightboxImg.complete && lightboxImg.naturalWidth > 0) {
+      lightboxImg.onload();
+    }
   }
 
   function closeLightbox() {
     if (!lightboxEl) return;
     lightboxRequestToken += 1;
+    if (lightboxImg) {
+      lightboxImg.onerror = null;
+      lightboxImg.onload = null;
+    }
+    if (lightboxThumbImg) {
+      lightboxThumbImg.hidden = true;
+      lightboxThumbImg.removeAttribute("src");
+    }
     lightboxEl.classList.add("hidden");
     lightboxEl.classList.remove("is-loading", "has-full-artwork");
   }
@@ -2116,12 +1897,6 @@
         character.icon || character.iconFallback
       );
     };
-
-    const warm = (e) => {
-      if (e?.pointerType === "touch") return;
-      prewarmArtwork(character.artworkSources || character.artwork);
-    };
-    item.addEventListener("pointerenter", warm, { passive: true });
 
     item.addEventListener("mousedown", (e) => {
       if (enableMiddleClick && e.button === 1) e.preventDefault();
@@ -2460,24 +2235,6 @@
     setProgressCounts(owned, total);
   }
 
-  function warmShipThumbs(list, limit = 80) {
-    const ships = Array.isArray(list) ? list.slice(0, limit) : [];
-    if (!ships.length) return;
-    const run = () => {
-      ships.forEach((ship) => {
-        const sources = getShipThumbSources(ship.icon || ship.thumb);
-        loadImageDecoded(sources.primary)
-          .catch(() => loadImageDecoded(sources.fallback))
-          .catch(() => {});
-      });
-    };
-    if (typeof window.requestIdleCallback === "function") {
-      window.requestIdleCallback(run, { timeout: 700 });
-    } else {
-      setTimeout(run, 120);
-    }
-  }
-
   function renderShipsCatalog(query = "") {
     if (!characterList) return;
     characterList.innerHTML = "";
@@ -2565,7 +2322,6 @@
       grid.appendChild(item);
     });
     characterList.appendChild(grid);
-    warmShipThumbs(visible);
     requestAnimationFrame(applyDynamicMainPadding);
   }
 
@@ -2877,7 +2633,6 @@
       });
 
       characterList.appendChild(grid);
-      scheduleIdleArtworkWarmup(filtered);
       requestAnimationFrame(applyDynamicMainPadding);
       return;
     }
@@ -3117,7 +2872,6 @@
       characterList.appendChild(section);
     });
 
-    scheduleIdleArtworkWarmup(visible);
     requestAnimationFrame(applyDynamicMainPadding);
   }
 
